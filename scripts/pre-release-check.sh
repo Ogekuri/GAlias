@@ -10,9 +10,13 @@
 #          invoked from any working directory (REQ-218), prints one canonical
 #          English progress line per step plus a final success line (REQ-224),
 #          aborts fail-fast with non-zero exit at the first failing step
-#          (REQ-225), and removes the temporary build directory at exit
-#          without modifying tracked repository files (REQ-223).
-# @satisfies REQ-217, REQ-218, REQ-219, REQ-220, REQ-221, REQ-222, REQ-223, REQ-224, REQ-225
+#          (REQ-225), and removes at exit every validation artifact it
+#          created — the temporary build directory, setuptools `build/`
+#          output, `src/*.egg-info` directories, `.pytest_cache`, and
+#          `__pycache__` directories under `src/` and `tests/` — without
+#          modifying tracked repository files (REQ-223) and preserving the
+#          uv-managed `.venv` environment (REQ-226, REQ-227).
+# @satisfies REQ-217, REQ-218, REQ-219, REQ-220, REQ-221, REQ-222, REQ-223, REQ-224, REQ-225, REQ-226, REQ-227
 
 set -euo pipefail
 
@@ -23,15 +27,25 @@ REPO_ROOT="$(cd "$(dirname "$SCRIPT_PATH")/.." && pwd)"
 ## @brief Temporary output directory receiving `uv build` artifacts (REQ-222).
 BUILD_DIR="$(mktemp -d)"
 
-## @brief Remove the temporary build directory when the script exits.
-# @details Registered as an EXIT trap so artifacts are cleaned on success,
-#          failure, and interruption alike; no tracked repository file is
-#          ever modified (REQ-223).
-# @return None; side-effect: filesystem removal of "$BUILD_DIR".
-cleanup_build_dir() {
+## @brief Remove every script-created validation artifact when the script exits.
+# @details Registered as an EXIT trap so cleanup runs on success, failure,
+#          and interruption alike. Removes the temporary build directory
+#          (REQ-222), the setuptools `build/` intermediate tree, the
+#          `.pytest_cache` directory, `src/*.egg-info` directories, and
+#          `__pycache__` directories under `src/` and `tests/` (REQ-226).
+#          Never touches tracked repository files (REQ-223) and never
+#          removes the uv-managed `.venv` environment (REQ-227). Every
+#          removal tolerates absent paths so the trap cannot flip the
+#          script exit status.
+# @return None; side-effect: filesystem removal of the listed artifact paths.
+cleanup_validation_artifacts() {
   rm -rf "$BUILD_DIR"
+  rm -rf "$REPO_ROOT/build"
+  rm -rf "$REPO_ROOT/.pytest_cache"
+  rm -rf "$REPO_ROOT"/src/*.egg-info
+  find "$REPO_ROOT/src" "$REPO_ROOT/tests" -type d -name "__pycache__" -prune -exec rm -rf {} + 2>/dev/null || true
 }
-trap cleanup_build_dir EXIT
+trap cleanup_validation_artifacts EXIT
 
 ## @brief Print one canonical pre-release-check progress line.
 # @param message {str} English step description or outcome rendered in the line.

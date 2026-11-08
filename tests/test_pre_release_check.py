@@ -17,7 +17,9 @@ HDT artifacts (Generator mode):
   prerequisite and step invocation sequence (REQ-219, REQ-220, REQ-221,
   REQ-222), temporary build directory cleanup (REQ-223), progress and
   success output format (REQ-224), fail-fast abort on the first failing
-  step (REQ-225), abort when `git` is missing from PATH (REQ-219).
+  step (REQ-225), removal of build and intermediate validation artifacts
+  left by the build step (REQ-226), abort when `git` is missing from PATH
+  (REQ-219).
 """
 
 import os
@@ -75,6 +77,13 @@ class PreReleaseCheckScriptTest(unittest.TestCase):
             "if [ -n \"${UV_FAIL_FIRST:-}\" ] && [ ! -e \"$UV_FAIL_MARKER\" ]; then\n"
             "  : > \"$UV_FAIL_MARKER\"\n"
             "  exit 1\n"
+            "fi\n"
+            "if [ \"$1\" = \"build\" ]; then\n"
+            "  mkdir -p \"$PWD/build/nested\" \"$PWD/src/fake.egg-info\" \"$PWD/.pytest_cache\" \"$PWD/src/git_alias/__pycache__\"\n"
+            "  : > \"$PWD/build/nested/residue.bin\"\n"
+            "  : > \"$PWD/src/fake.egg-info/PKG-INFO\"\n"
+            "  : > \"$PWD/.pytest_cache/cache.db\"\n"
+            "  : > \"$PWD/src/git_alias/__pycache__/module.cpython-311.pyc\"\n"
             "fi\n"
             "exit 0\n",
         )
@@ -171,9 +180,10 @@ class PreReleaseCheckScriptTest(unittest.TestCase):
     #          fake `git`/`uv` shims, asserting the exact invocation order
     #          (`uv --version`, `uv lock --check`, `uv run pytest`,
     #          `uv build --out-dir`), removal of the temporary build
-    #          directory at exit, and canonical progress plus success lines.
+    #          directory and every build/intermediate residue artifact at
+    #          exit, and canonical progress plus success lines.
     # @return None.
-    # @satisfies REQ-218, REQ-219, REQ-220, REQ-221, REQ-222, REQ-223, REQ-224
+    # @satisfies REQ-218, REQ-219, REQ-220, REQ-221, REQ-222, REQ-223, REQ-224, REQ-226
     def test_script_executes_full_step_sequence_from_any_working_directory(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             # Arrange
@@ -195,6 +205,12 @@ class PreReleaseCheckScriptTest(unittest.TestCase):
             build_dir = Path(invocations[3][2])
             self.assertTrue(build_dir.name.startswith("tmp"))
             self.assertFalse(build_dir.exists())
+            self.assertFalse((self.REPO_ROOT / "build").exists())
+            self.assertFalse((self.REPO_ROOT / "src" / "fake.egg-info").exists())
+            self.assertFalse((self.REPO_ROOT / ".pytest_cache").exists())
+            self.assertFalse(
+                (self.REPO_ROOT / "src" / "git_alias" / "__pycache__").exists()
+            )
             self.assertIn("--- [pre-release-check] Check git availability ---", completed.stdout)
             self.assertIn("--- [pre-release-check] Check uv availability ---", completed.stdout)
             self.assertIn(

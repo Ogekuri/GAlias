@@ -20,7 +20,7 @@
 - ID: PROC:pre-release-check
   - Type: Process
   - Parent Process: null
-  - Role: Bash pre-release validation script orchestrating prerequisite, dependency-sync, full-test-suite, and distribution-build checks before an official release
+  - Role: Bash pre-release validation script orchestrating prerequisite, dependency-sync, full-test-suite, and distribution-build checks with post-run validation-artifact cleanup before an official release
   - Entrypoint Symbols:
     - `scripts/pre-release-check.sh::<module_body>`
   - Defining Files:
@@ -195,10 +195,10 @@
 
 ### PROC:pre-release-check
 - Entrypoint(s):
-  - `scripts/pre-release-check.sh::<module_body>`: pre-release validation script that resolves the repository root, runs fail-fast validation steps, and cleans the temporary build directory at exit [`scripts/pre-release-check.sh`]
+  - `scripts/pre-release-check.sh::<module_body>`: pre-release validation script that resolves the repository root, runs fail-fast validation steps, and removes script-created validation artifacts at exit [`scripts/pre-release-check.sh`]
 - Lifecycle/trigger:
   - Start: OS invokes `scripts/pre-release-check.sh` as an executable entrypoint from any working directory.
-  - Stop: exits after the final success line, or exits non-zero at the first failing step; the EXIT trap removes the temporary build directory in both cases.
+  - Stop: exits after the final success line, or exits non-zero at the first failing step; the EXIT trap removes the temporary build directory and other validation artifacts in both cases while preserving the uv-managed `.venv` environment.
   - Threads: no explicit threads detected.
 - Internal Call-Trace Tree:
   - `scripts/pre-release-check.sh::<module_body>(...)`: resolve repository root from the script location, create the temporary build directory, register the EXIT cleanup trap, and run validation steps in order [`scripts/pre-release-check.sh`]
@@ -209,7 +209,7 @@
       - External boundary: `uv lock --check` dependency-lock synchronization check.
       - External boundary: `uv run pytest` complete unit-test-suite execution.
       - External boundary: `uv build --out-dir <temporary directory>` sdist and wheel build.
-    - `scripts/pre-release-check.sh::cleanup_build_dir(...)`: EXIT trap removing the temporary build directory [`scripts/pre-release-check.sh`]
+    - `scripts/pre-release-check.sh::cleanup_validation_artifacts(...)`: EXIT trap removing the temporary build directory, `build/`, `.pytest_cache`, `src/*.egg-info`, and `src/`/`tests/` `__pycache__` directories while preserving `.venv` [`scripts/pre-release-check.sh`]
 - External Boundaries:
   - External `git` and `uv` executables; temporary-directory filesystem I/O.
 

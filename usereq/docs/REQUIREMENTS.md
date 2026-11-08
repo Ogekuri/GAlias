@@ -16,13 +16,14 @@ tags: ["requirements", "srs", "galias"]
 ---
 
 # GAlias CLI Requirements
-**Version**: 1.37
+**Version**: 1.38
 **Author**: Francesco Rolando
 **Date**: 2026-11-07
 
 ## Revision History
 | Date | Version | Change Summary |
 |------|---------|----------------|
+| 2026-11-07 | 1.38 | Tightened `scripts/pre-release-check.sh` post-run cleanup so execution leaves the repository free of build and intermediate validation artifacts, preserving only the uv-managed environment (REQ-223, REQ-226, REQ-227). |
 | 2026-11-07 | 1.37 | Added the repository-local `scripts/pre-release-check.sh` official-release pre-validation script covering prerequisite checks, lockfile sync verification, full pytest execution, and distribution build (REQ-217..REQ-225). |
 | 2026-11-07 | 1.33 | Renamed the `--upgrade` GitHub-source option from `--github` to `--develop` with equivalent `--dev` (REQ-001, REQ-201, REQ-203, REQ-198). |
 | 2026-11-07 | 1.34 | Made `--upgrade --develop`/`--dev` resolve and install the newest GitHub release tag via the GitHub releases API regardless of branch (REQ-201, REQ-208, REQ-209, REQ-210). |
@@ -312,7 +313,9 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-220**: MUST verify `uv.lock` synchronization with `pyproject.toml` via `uv lock --check` before test execution.
 - **REQ-221**: MUST execute the complete pytest suite through `uv run pytest` and abort with non-zero exit when the suite fails.
 - **REQ-222**: MUST build sdist and wheel distributions through `uv build` into a temporary output directory and abort when the build fails.
-- **REQ-223**: MUST remove the temporary build output directory at exit and MUST NOT modify tracked repository files.
+- **REQ-223**: MUST NOT modify tracked repository files at any validation step.
+- **REQ-226**: MUST remove at exit every validation artifact it created, including the temporary build directory, setuptools `build/`, `src/*.egg-info`, `.pytest_cache`, and `src/`/`tests/` `__pycache__` directories.
+- **REQ-227**: MUST preserve the uv-managed `.venv` environment across executions.
 - **REQ-224**: MUST print one `--- [pre-release-check] <message> ---` English progress line per step plus a final success line.
 - **REQ-225**: MUST abort at the first failing step with non-zero exit status and skip all subsequent steps.
 
@@ -345,7 +348,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - `core.py` implements dispatch, command handlers, config loading/writing, git subprocess wrappers, and release/changelog flows.
 - `foresta.py` implements vine-based text tree rendering for git history (`l` alias).
 - `release-pypi.yml` implements manual-or-tag-triggered CI release build, GitHub Release publication, and PyPI OIDC Trusted Publishing; tag commits contained in `origin/master` or `origin/develop` run the release workflow, and only master-contained tag commits publish to PyPI (REQ-205, REQ-206). Release automation executes on the GitHub Actions Node24 runner generation without Node20 opt-out overrides (REQ-211, REQ-212, REQ-213).
-- `scripts/pre-release-check.sh` implements the repository-local official-release pre-validation flow: prerequisite checks, lockfile synchronization check, full pytest execution, and temporary-directory distribution build (REQ-217..REQ-225).
+- `scripts/pre-release-check.sh` implements the repository-local official-release pre-validation flow: prerequisite checks, lockfile synchronization check, full pytest execution, temporary-directory distribution build, and post-run artifact cleanup (REQ-217..REQ-227).
 - No explicit performance optimizations identified.
 
 ### 3.5 Evidence for Added Requirements
@@ -405,6 +408,8 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-220** evidence: `scripts/pre-release-check.sh` `uv lock --check` step ordered before the pytest step.
 - **REQ-221** evidence: `scripts/pre-release-check.sh` `uv run pytest` step executing the complete unit-test suite.
 - **REQ-222** evidence: `scripts/pre-release-check.sh` `uv build --out-dir <temporary directory>` step.
-- **REQ-223** evidence: `scripts/pre-release-check.sh` `trap` EXIT cleanup removing the temporary build directory.
+- **REQ-223** evidence: `scripts/pre-release-check.sh` validation commands preserving tracked repository content and the EXIT trap removing only script-created artifact paths.
+- **REQ-226** evidence: `scripts/pre-release-check.sh` `cleanup_validation_artifacts` EXIT trap removing the temporary build directory, `build/`, `.pytest_cache`, `src/*.egg-info`, and `src/`/`tests/` `__pycache__` directories.
+- **REQ-227** evidence: `scripts/pre-release-check.sh` cleanup list excluding `.venv` so the uv-managed environment persists across executions.
 - **REQ-224** evidence: `scripts/pre-release-check.sh` `--- [pre-release-check] ... ---` progress lines plus the final success line.
 - **REQ-225** evidence: `scripts/pre-release-check.sh` `run_step` fail-fast handler exiting non-zero at the first failed step.
