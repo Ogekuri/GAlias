@@ -13,10 +13,12 @@ from pathlib import Path
 #          steps (REQ-113, REQ-114), OIDC permissions (REQ-193), PyPI Trusted
 #          Publishing post-steps without credentials (REQ-194, REQ-195),
 #          PyPI project metadata (REQ-196), PEP 639 license declaration
-#          (REQ-197), README install documentation (REQ-198), and Node24
+#          (REQ-197), README install documentation (REQ-198), Node24
 #          runner-generation pins without Node20 opt-out overrides
-#          (REQ-211, REQ-212, REQ-213).
-# @satisfies REQ-112, REQ-113, REQ-114, REQ-193, REQ-194, REQ-195, REQ-196, REQ-197, REQ-198, REQ-211, REQ-212, REQ-213
+#          (REQ-211, REQ-212, REQ-213), and the test-release job gating
+#          release build and publication on successful lock synchronization
+#          and full pytest execution (REQ-228, REQ-229).
+# @satisfies REQ-112, REQ-113, REQ-114, REQ-193, REQ-194, REQ-195, REQ-196, REQ-197, REQ-198, REQ-211, REQ-212, REQ-213, REQ-228, REQ-229
 class ReleaseWorkflowPyPiTest(unittest.TestCase):
     ## @brief Repository root path used by release-contract tests.
     REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -219,7 +221,7 @@ class ReleaseWorkflowPyPiTest(unittest.TestCase):
     def test_workflow_pins_node24_action_majors(self):
         # REQ-213: Node24-based action majors replace Node20-based majors.
         text = self._workflow_text()
-        self.assertEqual(text.count("uses: actions/checkout@v5"), 2)
+        self.assertEqual(text.count("uses: actions/checkout@v5"), 3)
         self.assertIn("uses: actions/setup-python@v6", text)
         self.assertIn("uses: astral-sh/setup-uv@v6", text)
         self.assertIn("uses: actions/attest-build-provenance@v3", text)
@@ -235,6 +237,41 @@ class ReleaseWorkflowPyPiTest(unittest.TestCase):
         self.assertNotIn("node20", text.lower())
         self.assertNotIn("FORCE_JAVASCRIPT_ACTIONS_TO_NODE24", text)
         self.assertNotIn("ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION", text)
+    ## @brief Verify the test-release job runs lock check and full pytest suite.
+    # @details REQ-228: the test-release job executes after checkout with
+    #          Node24-based setup actions and runs `uv lock --check` followed
+    #          by `uv run pytest` before any build job is declared.
+    # @return None.
+    # @satisfies REQ-228, REQ-213
+    def test_workflow_runs_test_release_job_with_lock_check_and_pytest(self):
+        # Arrange
+        text = self._workflow_text()
+        test_job_index = text.index("  test-release:")
+        build_job_index = text.index("  build-release:")
+        # Act
+        job_block = text[test_job_index:build_job_index]
+        # Assert
+        self.assertLess(test_job_index, build_job_index)
+        self.assertIn("uses: actions/checkout@v5", job_block)
+        self.assertIn("uses: astral-sh/setup-uv@v6", job_block)
+        self.assertIn("run: uv lock --check", job_block)
+        self.assertIn("run: uv run pytest", job_block)
+
+    ## @brief Verify build-release is gated on test-release success via needs.
+    # @details REQ-229: a failing test-release job skips build-release and
+    #          therefore every downstream release step (attestation, GitHub
+    #          Release upload, PyPI publication).
+    # @return None.
+    # @satisfies REQ-229
+    def test_workflow_gates_build_release_on_test_release_success(self):
+        # Arrange
+        text = self._workflow_text()
+        # Act
+        test_job_index = text.index("  test-release:")
+        needs_index = text.index("needs: [check-branch, test-release]")
+        # Assert
+        self.assertIn("needs: [check-branch, test-release]", text)
+        self.assertLess(test_job_index, needs_index)
 
 
 if __name__ == "__main__":
