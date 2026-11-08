@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.50.1](https://github.com/Ogekuri/GAlias/compare/v0.50.0..v0.50.1) - 2026-11-08
+### 🚜  Changes
+- report GitHub fetch failure reason in --ver output [useReq] *(version-check)*
+  - Encode REQ-230/REQ-231 in the SRS: failed GitHub latest-version
+  - resolution now prints 'GitHub latest: unknown (<reason>)' instead of a
+  - bare placeholder. Add _github_failure_reason deriving the reason from
+  - HTTPError status, reason phrase, and the API 'message' field; add
+  - _fetch_github_release_tag_with_reason so _fetch_github_latest_version
+  - returns (version, reason) to main, keeping REQ-127 stderr diagnostics.
+  - Update WORKFLOW/REFERENCES and version-reporting unit tests for the
+  - new tuple contract and 404 rate-limit interception coverage.
+
 ## [0.50.0](https://github.com/Ogekuri/GAlias/compare/v0.49.0..v0.50.0) - 2026-11-08
 ### ⛰️  Features
 - add pre-release validation script with tests and SRS [useReq] *(pre-release-check)*
@@ -1021,6 +1033,7 @@
 - \[0.48.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.48.0
 - \[0.49.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.49.0
 - \[0.50.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.50.0
+- \[0.50.1\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.50.1
 
 [0.1.0]: https://github.com/Ogekuri/GAlias/releases/tag/v0.1.0
 [0.2.0]: https://github.com/Ogekuri/GAlias/compare/v0.1.0..v0.2.0
@@ -1072,3 +1085,4 @@
 [0.48.0]: https://github.com/Ogekuri/GAlias/compare/v0.47.0..v0.48.0
 [0.49.0]: https://github.com/Ogekuri/GAlias/compare/v0.48.0..v0.49.0
 [0.50.0]: https://github.com/Ogekuri/GAlias/compare/v0.49.0..v0.50.0
+[0.50.1]: https://github.com/Ogekuri/GAlias/compare/v0.50.0..v0.50.1
