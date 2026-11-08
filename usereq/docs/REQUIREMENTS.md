@@ -6,6 +6,7 @@ author: "Francesco Rolando"
 scope:
   paths:
     - "src/**/*.py"
+    - "scripts/*.sh"
     - ".github/workflows/**/*.yml"
   excludes:
     - "tests/**"
@@ -15,13 +16,14 @@ tags: ["requirements", "srs", "galias"]
 ---
 
 # GAlias CLI Requirements
-**Version**: 1.36
+**Version**: 1.37
 **Author**: Francesco Rolando
 **Date**: 2026-11-07
 
 ## Revision History
 | Date | Version | Change Summary |
 |------|---------|----------------|
+| 2026-11-07 | 1.37 | Added the repository-local `scripts/pre-release-check.sh` official-release pre-validation script covering prerequisite checks, lockfile sync verification, full pytest execution, and distribution build (REQ-217..REQ-225). |
 | 2026-11-07 | 1.33 | Renamed the `--upgrade` GitHub-source option from `--github` to `--develop` with equivalent `--dev` (REQ-001, REQ-201, REQ-203, REQ-198). |
 | 2026-11-07 | 1.34 | Made `--upgrade --develop`/`--dev` resolve and install the newest GitHub release tag via the GitHub releases API regardless of branch (REQ-201, REQ-208, REQ-209, REQ-210). |
 | 2026-11-07 | 1.35 | Migrated release automation to the GitHub Actions Node24 runner generation, pinning Node24-based action majors and banning Node20 opt-out overrides (REQ-211, REQ-212, REQ-213). |
@@ -304,6 +306,15 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-153**: MUST `get` abort with explicit English error when `origin/<develop>` has zero pending commits relative to the local configured `develop` branch.
 - **REQ-154**: MUST `get` fast-forward the local configured `master` branch from `origin/<master>` including tags, then fast-forward the local configured `develop` branch from `origin/<develop>` including tags, and finally fast-forward merge the local configured `develop` branch into the currently checked out local `work` branch.
 - **REQ-155**: MUST `get` terminate with explicit English error and non-zero exit status when any fetch or merge step of the synchronization flow fails.
+- **REQ-217**: MUST provide `scripts/pre-release-check.sh` as an executable Bash script validating repository readiness before an official release.
+- **REQ-218**: MUST resolve the repository root from the script location so execution succeeds from any working directory.
+- **REQ-219**: MUST verify `git` and Astral `uv` executables exist in PATH before validation steps and abort with explicit English errors when missing.
+- **REQ-220**: MUST verify `uv.lock` synchronization with `pyproject.toml` via `uv lock --check` before test execution.
+- **REQ-221**: MUST execute the complete pytest suite through `uv run pytest` and abort with non-zero exit when the suite fails.
+- **REQ-222**: MUST build sdist and wheel distributions through `uv build` into a temporary output directory and abort when the build fails.
+- **REQ-223**: MUST remove the temporary build output directory at exit and MUST NOT modify tracked repository files.
+- **REQ-224**: MUST print one `--- [pre-release-check] <message> ---` English progress line per step plus a final success line.
+- **REQ-225**: MUST abort at the first failing step with non-zero exit status and skip all subsequent steps.
 
 ### 3.3 Project File Structure
 ```
@@ -311,6 +322,9 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 ├── .github/
 │   └── workflows/
 │       └── release-pypi.yml
+├── scripts/
+│   ├── g.sh
+│   └── pre-release-check.sh
 ├── docs/
 │   ├── REQUIREMENTS.md
 │   ├── REFERENCES.md
@@ -331,6 +345,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - `core.py` implements dispatch, command handlers, config loading/writing, git subprocess wrappers, and release/changelog flows.
 - `foresta.py` implements vine-based text tree rendering for git history (`l` alias).
 - `release-pypi.yml` implements manual-or-tag-triggered CI release build, GitHub Release publication, and PyPI OIDC Trusted Publishing; tag commits contained in `origin/master` or `origin/develop` run the release workflow, and only master-contained tag commits publish to PyPI (REQ-205, REQ-206). Release automation executes on the GitHub Actions Node24 runner generation without Node20 opt-out overrides (REQ-211, REQ-212, REQ-213).
+- `scripts/pre-release-check.sh` implements the repository-local official-release pre-validation flow: prerequisite checks, lockfile synchronization check, full pytest execution, and temporary-directory distribution build (REQ-217..REQ-225).
 - No explicit performance optimizations identified.
 
 ### 3.5 Evidence for Added Requirements
@@ -384,3 +399,12 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-192** evidence: `src/git_alias/core.py` `DEFAULT_CONFIG` key order plus `GLOBAL_CONFIG_KEYS` order driving `print_all_help` Configuration Parameters rendering.
 - **REQ-015** evidence: `src/git_alias/core.py` `_write_missing_config_values` normalizes only `GLOBAL_CONFIG_KEYS` entries, so out-of-scope global keys such as legacy `editor` are ignored and never persisted.
 - **REQ-207** evidence: `src/git_alias/core.py` `_load_config_rules` reads only `entry.get("pattern")` and `print_all_help` renders only the `pattern` field; entries lacking `pattern` are ignored or rendered empty.
+- **REQ-217** evidence: `scripts/pre-release-check.sh` executable Bash script implementing the official-release pre-validation entrypoint.
+- **REQ-218** evidence: `scripts/pre-release-check.sh` `REPO_ROOT` resolution from `BASH_SOURCE` followed by repository-root execution.
+- **REQ-219** evidence: `scripts/pre-release-check.sh` `git --version` and `uv --version` prerequisite steps with explicit English abort diagnostics.
+- **REQ-220** evidence: `scripts/pre-release-check.sh` `uv lock --check` step ordered before the pytest step.
+- **REQ-221** evidence: `scripts/pre-release-check.sh` `uv run pytest` step executing the complete unit-test suite.
+- **REQ-222** evidence: `scripts/pre-release-check.sh` `uv build --out-dir <temporary directory>` step.
+- **REQ-223** evidence: `scripts/pre-release-check.sh` `trap` EXIT cleanup removing the temporary build directory.
+- **REQ-224** evidence: `scripts/pre-release-check.sh` `--- [pre-release-check] ... ---` progress lines plus the final success line.
+- **REQ-225** evidence: `scripts/pre-release-check.sh` `run_step` fail-fast handler exiting non-zero at the first failed step.

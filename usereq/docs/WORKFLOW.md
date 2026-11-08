@@ -17,6 +17,14 @@
     - `scripts/g.sh::<module_body>`
   - Defining Files:
     - `scripts/g.sh`
+- ID: PROC:pre-release-check
+  - Type: Process
+  - Parent Process: null
+  - Role: Bash pre-release validation script orchestrating prerequisite, dependency-sync, full-test-suite, and distribution-build checks before an official release
+  - Entrypoint Symbols:
+    - `scripts/pre-release-check.sh::<module_body>`
+  - Defining Files:
+    - `scripts/pre-release-check.sh`
 - ID: PROC:git
   - Type: Process
   - Parent Process: null
@@ -185,6 +193,26 @@
   - HTTP GET to the GitHub latest-release API (`https://api.github.com/repos/Ogekuri/GAlias/releases/latest`) for `--ver`/`--version` dual-source reporting and for `--upgrade --develop`/`--dev` release-tag resolution.
   - File I/O for config, changelog, and version-managed files.
 
+### PROC:pre-release-check
+- Entrypoint(s):
+  - `scripts/pre-release-check.sh::<module_body>`: pre-release validation script that resolves the repository root, runs fail-fast validation steps, and cleans the temporary build directory at exit [`scripts/pre-release-check.sh`]
+- Lifecycle/trigger:
+  - Start: OS invokes `scripts/pre-release-check.sh` as an executable entrypoint from any working directory.
+  - Stop: exits after the final success line, or exits non-zero at the first failing step; the EXIT trap removes the temporary build directory in both cases.
+  - Threads: no explicit threads detected.
+- Internal Call-Trace Tree:
+  - `scripts/pre-release-check.sh::<module_body>(...)`: resolve repository root from the script location, create the temporary build directory, register the EXIT cleanup trap, and run validation steps in order [`scripts/pre-release-check.sh`]
+    - `scripts/pre-release-check.sh::log_step(...)`: print one canonical `--- [pre-release-check] ... ---` progress line [`scripts/pre-release-check.sh`]
+    - `scripts/pre-release-check.sh::run_step(...)`: execute one validation command from the repository root and exit non-zero on the first failure [`scripts/pre-release-check.sh`]
+      - External boundary: `git --version` prerequisite availability check.
+      - External boundary: `uv --version` prerequisite availability check.
+      - External boundary: `uv lock --check` dependency-lock synchronization check.
+      - External boundary: `uv run pytest` complete unit-test-suite execution.
+      - External boundary: `uv build --out-dir <temporary directory>` sdist and wheel build.
+    - `scripts/pre-release-check.sh::cleanup_build_dir(...)`: EXIT trap removing the temporary build directory [`scripts/pre-release-check.sh`]
+- External Boundaries:
+  - External `git` and `uv` executables; temporary-directory filesystem I/O.
+
 ### PROC:git
 - Entrypoint(s):
   - `run_git_cmd(...)`, `run_git_text(...)`, `capture_git_output(...)`, `_git_status_lines(...)`, `_current_branch_name(...)`, `_commit_exists_in_branch(...)`, `_ref_exists(...)`, and `cmd_ar(...)` [`src/git_alias/core.py`]
@@ -315,6 +343,16 @@
   - Endpoint/Channel: process argv plus stdio streams
   - Payload/Data-Shape: `List[str]` git argv and optional stdin/stdout/stderr text streams; visual diff aliases issue `git difftool -d` argv with `--extcmd=<configured tool>` overrides; release publication and resume issue explicit branch/tag refspec pushes and `ls-remote` identity queries, restricted to configured `develop` and its release tag when the release is develop-scoped
   - Evidence: `src/git_alias/core.py`
+- EDGE: PROC:pre-release-check -> PROC:uv
+  - Mechanism: OS subprocess spawn
+  - Endpoint/Channel: process argv plus stdio streams
+  - Payload/Data-Shape: `uv --version`, `uv lock --check`, `uv run pytest`, and `uv build --out-dir <temporary directory>` argv sequences; `uv run pytest` executes the unit-test suite against the packaged CLI
+  - Evidence: `scripts/pre-release-check.sh`
+- EDGE: PROC:pre-release-check -> PROC:git
+  - Mechanism: OS subprocess spawn
+  - Endpoint/Channel: process argv
+  - Payload/Data-Shape: `git --version` prerequisite availability check
+  - Evidence: `scripts/pre-release-check.sh`
 - EDGE: PROC:main -> PROC:uv
   - Mechanism: OS subprocess spawn
   - Endpoint/Channel: process argv plus stdio
