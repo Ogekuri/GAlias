@@ -596,21 +596,63 @@ def _build_github_upgrade_command(tag: str) -> Tuple[str, ...]:
     )
 
 
-## @brief Fetch the raw latest GitHub release tag name for upgrade ref selection.
+## @brief Compose a non-empty English failure reason for an intercepted GitHub fetch exception.
+# @details Intercepts transport and payload failures raised by the GitHub
+#          latest-release fetch and derives a deterministic diagnostic:
+#          `HTTPError` instances render `HTTP <code>: <reason phrase>:
+#          <api message>`, appending the API-provided JSON `message` field
+#          when the error body decodes to a JSON object containing a
+#          non-empty `message` string; `URLError` instances render the
+#          bare socket reason; every other exception renders its text,
+#          falling back to the exception class name when the text is blank.
+#          Never mutates state and never raises: the error-body read is
+#          guarded so reason derivation stays total.
+# @param exc {BaseException} Exception intercepted by the GitHub fetch guard.
+# @return {str} Non-empty English failure reason (REQ-231).
+# @note Complexity: O(1) excluding the single error-body read.
+# @satisfies REQ-231
+def _github_failure_reason(exc: BaseException) -> str:
+    if isinstance(exc, HTTPError):
+        reason_text = str(exc.reason or "").strip()
+        api_message = ""
+        try:
+            body = json.loads(exc.read().decode("utf-8", "ignore"))
+        except Exception:
+            body = None
+        if isinstance(body, dict):
+            candidate = body.get("message")
+            if isinstance(candidate, str):
+                api_message = candidate.strip()
+        detail = ": ".join(part for part in (reason_text, api_message) if part)
+        return f"HTTP {exc.code}" + (f": {detail}" if detail else "")
+    if isinstance(exc, URLError):
+        reason_text = str(getattr(exc, "reason", "") or "").strip()
+        if reason_text:
+            return reason_text
+    text = str(exc).strip()
+    return text or exc.__class__.__name__
+
+
+## @brief Fetch the raw latest GitHub release tag together with its failure reason.
 # @details Performs exactly one HTTP GET against `GITHUB_LATEST_RELEASE_API`
 #          (REQ-208), decodes the JSON payload, and returns the `tag_name`
-#          field verbatim without stripping the leading `v`, so the value can
-#          be appended to `GITHUB_UPGRADE_SOURCE` as a git ref (REQ-209).
-#          Every transport or payload failure prints the standardized
-#          bright-red update-check diagnostic (REQ-127) and returns None
-#          without raising; the fetch never mutates the PyPI idle-time cache.
+#          field verbatim including any leading `v`, so the value can be
+#          appended to `GITHUB_UPGRADE_SOURCE` as a git ref (REQ-209).
+#          Every transport or payload failure is intercepted and converted
+#          by `_github_failure_reason` into a non-empty English reason
+#          (REQ-231); no diagnostic is emitted and no exception is raised,
+#          keeping REQ-127 reporting at the caller boundary. Never mutates
+#          the PyPI idle-time cache.
 # @param timeout_seconds {float} Request timeout in seconds (REQ-125).
-# @return {Optional[str]} Raw `tag_name` text; None on transport or decode
-#         failure; empty string when the payload lacks a `tag_name` field.
-# @satisfies REQ-208
-def _fetch_github_latest_release_tag(
+# @return {Tuple[Optional[str], Optional[str]]} `(tag_name, failure_reason)`;
+#         `failure_reason` is None on success; `tag_name` is None on transport
+#         or decode failure and empty string when the payload lacks a
+#         `tag_name` field.
+# @note Complexity: O(payload) for one HTTP GET plus one JSON decode.
+# @satisfies REQ-208, REQ-231
+def _fetch_github_release_tag_with_reason(
     timeout_seconds: float = VERSION_CHECK_TIMEOUT_SECONDS,
-) -> Optional[str]:
+) -> Tuple[Optional[str], Optional[str]]:
     request = Request(
         GITHUB_LATEST_RELEASE_API,
         headers={
@@ -623,17 +665,13 @@ def _fetch_github_latest_release_tag(
         with urlopen(request, timeout=timeout_seconds) as response:
             payload_bytes = response.read()
     except HTTPError as exc:
-        _print_update_check_error(f"HTTP {exc.code}")
-        return None
+        return None, _github_failure_reason(exc)
     except URLError as exc:
-        _print_update_check_error(str(exc.reason))
-        return None
+        return None, _github_failure_reason(exc)
     except TimeoutError:
-        _print_update_check_error("request timeout exceeded.")
-        return None
+        return None, "request timeout exceeded."
     except OSError as exc:
-        _print_update_check_error(str(exc))
-        return None
+        return None, _github_failure_reason(exc)
     try:
         payload_text = (
             payload_bytes.decode("utf-8")
@@ -642,40 +680,69 @@ def _fetch_github_latest_release_tag(
         )
         data = json.loads(payload_text)
     except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
-        _print_update_check_error(f"invalid JSON payload: {exc}")
-        return None
+        return None, _github_failure_reason(exc)
     if not isinstance(data, dict):
-        return ""
-    return str(data.get("tag_name") or "")
+        return "", None
+    return str(data.get("tag_name") or ""), None
 
 
-## @brief Fetch the latest GitHub release version for version reporting.
-# @details Delegates transport and payload decoding to
-#          `_fetch_github_latest_release_tag` (REQ-204), strips one leading
-#          `v` from the raw `tag_name`, and normalizes the result as a
-#          semantic version. Failure paths print the standardized bright-red
-#          update-check diagnostic (REQ-127) and return None without raising;
-#          the fetch is report-only (REQ-202) and never mutates the PyPI
+## @brief Fetch the raw latest GitHub release tag name for upgrade ref selection.
+# @details Delegates transport, decoding, and reason derivation to
+#          `_fetch_github_release_tag_with_reason` (REQ-208). On transport or
+#          decode failure it prints the standardized bright-red update-check
+#          diagnostic (REQ-127) carrying the REQ-231 failure reason and
+#          returns None without raising; the fetch never mutates the PyPI
 #          idle-time cache.
 # @param timeout_seconds {float} Request timeout in seconds (REQ-125).
-# @return {Optional[str]} Normalized latest GitHub release version, or None on
-#         any request, payload, or semver failure.
-# @satisfies REQ-202, REQ-204
-def _fetch_github_latest_version(
+# @return {Optional[str]} Raw `tag_name` text; None on transport or decode
+#         failure; empty string when the payload lacks a `tag_name` field.
+# @see _fetch_github_release_tag_with_reason, _github_failure_reason
+# @satisfies REQ-208, REQ-127, REQ-231
+def _fetch_github_latest_release_tag(
     timeout_seconds: float = VERSION_CHECK_TIMEOUT_SECONDS,
 ) -> Optional[str]:
-    tag_name = _fetch_github_latest_release_tag(timeout_seconds=timeout_seconds)
+    tag_name, failure_reason = _fetch_github_release_tag_with_reason(
+        timeout_seconds=timeout_seconds
+    )
     if tag_name is None:
+        _print_update_check_error(failure_reason or "request failed.")
         return None
+    return tag_name
+
+
+## @brief Fetch the latest GitHub release version together with its failure reason.
+# @details Delegates transport and payload decoding to
+#          `_fetch_github_release_tag_with_reason` (REQ-204), strips one
+#          leading `v` from the raw `tag_name`, and normalizes the result as
+#          a semantic version. Failure paths print the standardized
+#          bright-red update-check diagnostic (REQ-127) and return a
+#          non-empty REQ-231 failure reason so `main` renders
+#          `GitHub latest: unknown (<reason>)` (REQ-230); the fetch is
+#          report-only (REQ-202) and never mutates the PyPI idle-time cache.
+# @param timeout_seconds {float} Request timeout in seconds (REQ-125).
+# @return {Tuple[Optional[str], Optional[str]]} `(version, failure_reason)`;
+#         normalized latest GitHub release version with None reason on
+#         success; None version with non-empty reason on any request,
+#         payload, or semver failure.
+# @note Complexity: O(payload) for one HTTP GET plus one JSON decode.
+# @satisfies REQ-202, REQ-204, REQ-230, REQ-231
+def _fetch_github_latest_version(
+    timeout_seconds: float = VERSION_CHECK_TIMEOUT_SECONDS,
+) -> Tuple[Optional[str], Optional[str]]:
+    tag_name, failure_reason = _fetch_github_release_tag_with_reason(
+        timeout_seconds=timeout_seconds
+    )
+    if tag_name is None:
+        _print_update_check_error(failure_reason or "request failed.")
+        return None, failure_reason
     if tag_name.startswith("v"):
         tag_name = tag_name[1:]
     latest_text = _normalize_semver_text(tag_name)
     if _parse_semver_tuple(latest_text) is None:
-        _print_update_check_error(
-            "invalid API payload: `tag_name` is not semantic version."
-        )
-        return None
-    return latest_text
+        reason = "invalid API payload: `tag_name` is not semantic version."
+        _print_update_check_error(reason)
+        return None, reason
+    return latest_text, None
 
 
 ## @brief Execute `get_git_root` runtime logic for Git-Alias CLI.
@@ -5913,7 +5980,7 @@ def print_all_help():
 # @param argv Input parameter consumed by `main`.
 # @param check_updates Input parameter consumed by `main`.
 # @return Result emitted by `main` according to command contract.
-# @satisfies REQ-001, REQ-030, REQ-201, REQ-202, REQ-203
+# @satisfies REQ-001, REQ-030, REQ-201, REQ-202, REQ-203, REQ-230
 def main(argv=None, *, check_updates: bool = True):
     args = list(argv) if argv is not None else sys.argv[1:]
     force_online_update_check = bool(args) and args[0] in ("--ver", "--version")
@@ -5945,12 +6012,15 @@ def main(argv=None, *, check_updates: bool = True):
         )
         sys.exit(1)
     if args[0] in ("--ver", "--version"):
-        github_latest_version = _fetch_github_latest_version(
+        github_latest_version, github_failure_reason = _fetch_github_latest_version(
             timeout_seconds=VERSION_CHECK_TIMEOUT_SECONDS
         )
         print(get_cli_version())
         print(f"PyPI latest: {pypi_latest_version or 'unavailable'}")
-        print(f"GitHub latest: {github_latest_version or 'unavailable'}")
+        if github_latest_version:
+            print(f"GitHub latest: {github_latest_version}")
+        else:
+            print(f"GitHub latest: unknown ({github_failure_reason or 'unavailable'})")
         return
     if args[0] == "--write-config":
         write_default_config(git_root)

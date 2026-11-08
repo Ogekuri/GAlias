@@ -16,13 +16,14 @@ tags: ["requirements", "srs", "galias"]
 ---
 
 # GAlias CLI Requirements
-**Version**: 1.39
+**Version**: 1.40
 **Author**: Francesco Rolando
-**Date**: 2026-11-07
+**Date**: 2026-11-08
 
 ## Revision History
 | Date | Version | Change Summary |
 |------|---------|----------------|
+| 2026-11-08 | 1.40 | Added `--ver`/`--version` GitHub latest-version failure reporting: resolution failures now print `GitHub latest: unknown (<reason>)` with the intercepted failure reason, including HTTP status code and the API rate-limit message (REQ-230, REQ-231). |
 | 2026-11-07 | 1.39 | Added the `test-release` GitHub Actions job running `uv lock --check` plus the full pytest suite and gated `build-release` on it, preventing release artifacts and any publication when tests fail (REQ-228, REQ-229). |
 | 2026-11-07 | 1.38 | Tightened `scripts/pre-release-check.sh` post-run cleanup so execution leaves the repository free of build and intermediate validation artifacts, preserving only the uv-managed environment (REQ-223, REQ-226, REQ-227). |
 | 2026-11-07 | 1.37 | Added the repository-local `scripts/pre-release-check.sh` official-release pre-validation script covering prerequisite checks, lockfile sync verification, full pytest execution, and distribution build (REQ-217..REQ-225). |
@@ -204,6 +205,8 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-208**: MUST resolve the `--upgrade --develop`/`--dev` install ref by querying `https://api.github.com/repos/Ogekuri/GAlias/releases/latest` and parsing `tag_name` verbatim.
 - **REQ-209**: MUST execute `uv tool install --force --from git+https://github.com/Ogekuri/GAlias@<tag> galias` on Linux, where `<tag>` is the REQ-208-resolved `tag_name`.
 - **REQ-210**: MUST abort `--upgrade --develop`/`--dev` with an explicit English error and non-zero exit when REQ-208 resolution fails, without executing any install.
+- **REQ-230**: MUST when GitHub latest-version resolution fails during `--ver`/`--version`, print `GitHub latest: unknown (<reason>)` where `<reason>` is a non-empty English description of the intercepted failure.
+- **REQ-231**: MUST derive `<reason>` for GitHub HTTP transport failures from the HTTP status code, the HTTP reason phrase, and the API-provided `message` field when present; MUST derive `<reason>` from the exception text for every other GitHub resolution failure.
 - **REQ-214**: MUST document in `--upgrade` inline help that `--develop`/`--dev` select the newest GitHub release tag as install source.
 - **REQ-215**: MUST document in `major`, `minor`, and `patch` inline help that `--develop`/`--dev` select the develop-scoped release workflow of REQ-045.
 - **REQ-216**: MUST document in `README.md` that `--develop`/`--dev` mean GitHub-source install with `--upgrade` and develop-scoped release with `major`, `minor`, and `patch`.
@@ -379,6 +382,8 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-208** evidence: `src/git_alias/core.py` `_fetch_github_latest_release_tag` querying `GITHUB_LATEST_RELEASE_API` and returning the raw `tag_name`.
 - **REQ-209** evidence: `src/git_alias/core.py` `_build_github_upgrade_command` composing `git+https://github.com/Ogekuri/GAlias@<tag>` for `uv tool install`.
 - **REQ-210** evidence: `src/git_alias/core.py` `upgrade_self` explicit English error and non-zero exit when `_fetch_github_latest_release_tag` returns None.
+- **REQ-230** evidence: `src/git_alias/core.py` `main` `--ver`/`--version` branch printing `GitHub latest: unknown (<reason>)` using the failure reason returned by `_fetch_github_latest_version`.
+- **REQ-231** evidence: `src/git_alias/core.py` `_github_failure_reason` composing the reason from `HTTPError` status code, reason phrase, and the API JSON `message` field, with `_fetch_github_release_tag_with_reason` intercepting transport and payload failures.
 - **REQ-214** evidence: `src/git_alias/core.py` `MANAGEMENT_HELP` `--upgrade` entry documenting the `--develop`/`--dev` GitHub latest-release install source.
 - **REQ-215** evidence: `src/git_alias/core.py` `HELP_TEXTS` entries for `major`, `minor`, and `patch` documenting the develop-scoped release option.
 - **REQ-216** evidence: `README.md` GitHub install and release sections documenting the dual meaning of `--develop`/`--dev`.

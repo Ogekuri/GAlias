@@ -149,7 +149,7 @@ class AliasHelpTest(unittest.TestCase):
                 with mock.patch.object(
                     core, "check_for_newer_version", return_value="9.9.9"
                 ) as check_update, mock.patch.object(
-                    core, "_fetch_github_latest_version", return_value="9.9.8"
+                    core, "_fetch_github_latest_version", return_value=("9.9.8", None)
                 ) as fetch_github:
                     _, stdout, _ = self.run_script_result([flag], check=True)
                 check_update.assert_called_once()
@@ -159,19 +159,30 @@ class AliasHelpTest(unittest.TestCase):
                     f"{version}\nPyPI latest: 9.9.9\nGitHub latest: 9.9.8",
                 )
 
-    ## @brief Verify unavailable remote sources render as unavailable (REQ-202).
-    # @details Mock both fetchers returning None; the installed version line
-    #          stays first and both report lines degrade deterministically.
+    ## @brief Verify unavailable remote sources render as unavailable (REQ-202, REQ-230, REQ-231).
+    # @details Mock the PyPI fetcher returning None and the GitHub fetcher
+    #          returning no version plus the intercepted failure reason; the
+    #          installed version line stays first, the PyPI line degrades
+    #          deterministically, and the GitHub line renders
+    #          `GitHub latest: unknown (<reason>)`.
     # @param self {AliasHelpTest} Isolated test instance.
-    # @return {None} Assert REQ-202 degraded output.
+    # @return {None} Assert REQ-202/REQ-230/REQ-231 degraded output.
     def test_global_version_flags_report_unavailable_sources(self):
         version = self.module.get_cli_version()
+        github_failure_reason = (
+            "HTTP 404: Not Found: API rate limit exceeded for 203.0.113.7."
+        )
         with mock.patch.object(core, "check_for_newer_version", return_value=None), \
-                mock.patch.object(core, "_fetch_github_latest_version", return_value=None):
+                mock.patch.object(
+                    core,
+                    "_fetch_github_latest_version",
+                    return_value=(None, github_failure_reason),
+                ):
             _, stdout, _ = self.run_script_result(["--ver"], check=True)
         self.assertEqual(
             stdout.strip(),
-            f"{version}\nPyPI latest: unavailable\nGitHub latest: unavailable",
+            f"{version}\nPyPI latest: unavailable"
+            f"\nGitHub latest: unknown ({github_failure_reason})",
         )
 
     def test_global_version_flags_force_online_update_check(self):

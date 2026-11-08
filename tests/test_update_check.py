@@ -436,34 +436,80 @@ class UpdateCheckTest(unittest.TestCase):
             "git+https://github.com/Ogekuri/GAlias",
         )
 
-    ## @brief Verify GitHub tag_name parsing and v-prefix stripping (REQ-204).
+    ## @brief Verify GitHub tag_name parsing and v-prefix stripping (REQ-204, REQ-230).
     # @details Mock the HTTP boundary with a synthetic release payload.
     # @param self {UpdateCheckTest} Isolated test instance.
-    # @return {None} Assert REQ-204 normalized version text.
+    # @return {None} Assert REQ-204 normalized version text with no reason.
     def test_fetch_github_latest_version_parses_tag_name(self):
         with mock.patch.object(
             core, "urlopen", return_value=_FakeResponse({"tag_name": "v1.2.3"})
         ):
-            self.assertEqual(
-                core._fetch_github_latest_version(timeout_seconds=0.01), "1.2.3"
+            version, failure_reason = core._fetch_github_latest_version(
+                timeout_seconds=0.01
             )
+        self.assertEqual(version, "1.2.3")
+        self.assertIsNone(failure_reason)
 
-    ## @brief Verify GitHub fetch failure diagnostics (REQ-127, REQ-202).
-    # @details Network failure and missing tag_name both return None with the
-    #          standardized bright-red update-check diagnostic on stderr.
+    ## @brief Verify GitHub fetch failure diagnostics and reason (REQ-127, REQ-202, REQ-230, REQ-231).
+    # @details Network failure and missing tag_name both return no version
+    #          plus a non-empty English reason with the standardized
+    #          bright-red update-check diagnostic on stderr.
     # @param self {UpdateCheckTest} Isolated test instance.
-    # @return {None} Assert None result and error text.
+    # @return {None} Assert None version, reason text, and error output.
     def test_fetch_github_latest_version_reports_errors_and_returns_none(self):
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
             with mock.patch.object(core, "urlopen", side_effect=OSError("network down")):
-                self.assertIsNone(core._fetch_github_latest_version(timeout_seconds=0.01))
+                version, failure_reason = core._fetch_github_latest_version(
+                    timeout_seconds=0.01
+                )
+            self.assertIsNone(version)
+            self.assertEqual(failure_reason, "network down")
             with mock.patch.object(
                 core, "urlopen", return_value=_FakeResponse({"unexpected": "x"})
             ):
-                self.assertIsNone(core._fetch_github_latest_version(timeout_seconds=0.01))
+                version, failure_reason = core._fetch_github_latest_version(
+                    timeout_seconds=0.01
+                )
+            self.assertIsNone(version)
+            self.assertEqual(
+                failure_reason,
+                "invalid API payload: `tag_name` is not semantic version.",
+            )
         self.assertIn("Version check failed: network down", err.getvalue())
         self.assertIn("`tag_name` is not semantic version.", err.getvalue())
+
+    ## @brief Verify HTTP 404 rate-limit interception carries the API reason (REQ-230, REQ-231).
+    # @details Mock the HTTP boundary with a 404 `HTTPError` whose body
+    #          carries the GitHub API rate-limit message; the fetcher returns
+    #          no version plus a reason containing the HTTP status code and
+    #          the API message, and the standardized REQ-127 diagnostic
+    #          repeats the reason on stderr.
+    # @param self {UpdateCheckTest} Isolated test instance.
+    # @return {None} Assert REQ-230/REQ-231 reason composition.
+    def test_fetch_github_latest_version_intercepts_http_404_rate_limit(self):
+        rate_limit_headers = Message()
+        rate_limit_error = HTTPError(
+            url=core.GITHUB_LATEST_RELEASE_API,
+            code=404,
+            msg="Not Found",
+            hdrs=rate_limit_headers,
+            fp=io.BytesIO(
+                b'{"message": "API rate limit exceeded for 203.0.113.7.",'
+                b' "documentation_url": "https://docs.github.com/rest"}'
+            ),
+        )
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            with mock.patch.object(core, "urlopen", side_effect=rate_limit_error):
+                version, failure_reason = core._fetch_github_latest_version(
+                    timeout_seconds=0.01
+                )
+        self.assertIsNone(version)
+        assert isinstance(failure_reason, str)
+        self.assertIn("HTTP 404", failure_reason)
+        self.assertIn("API rate limit exceeded", failure_reason)
+        self.assertIn(failure_reason, err.getvalue())
 
     ## @brief Verify check_for_newer_version returns the PyPI latest text.
     # @details Mock the HTTP boundary and isolated cache; REQ-202 consumers use
