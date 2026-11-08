@@ -1,7 +1,26 @@
 # Changelog
 
-## [0.49.2](https://github.com/Ogekuri/GAlias/compare/v0.49.0..v0.49.2) - 2026-11-07
+## [0.50.0](https://github.com/Ogekuri/GAlias/compare/v0.49.0..v0.50.0) - 2026-11-08
+### ⛰️  Features
+- add pre-release validation script with tests and SRS [useReq] *(pre-release-check)*
+  - Add executable scripts/pre-release-check.sh running fail-fast official-
+  - release pre-validation: git/uv prerequisite checks, uv lock --check
+  - dependency synchronization, full pytest suite via uv run pytest, and
+  - uv build into a temporary directory removed at exit (REQ-217..REQ-225).
+  - Add HDT unit tests with fake git/uv shims covering step order, cleanup,
+  - progress output, and abort semantics. Update SRS to v1.37 with scope,
+  - file-structure, and evidence entries; add PROC:pre-release-check unit
+  - and communication edges to WORKFLOW.md; regenerate REFERENCES.md.
+
 ### 🐛  Bug Fixes
+- compile negation specs with supported pathspec gitignore style [useReq] *(ver-rules)*
+  - Replace the deprecated pathspec gitwildmatch registered style with the
+  - supported gitignore style in _build_version_negation_specs, eliminating
+  - DeprecationWarning emissions from ver_rules negation processing and
+  - preventing a future pathspec removal crash in ver/chver/release/rollback.
+  - Matching behavior is preserved (differential-verified; REQ-160, REQ-161,
+  - REQ-163, REQ-164, CPT-006). Add HDT reproducer test asserting warning-free
+  - negation spec compilation.
 - correct inaccurate inline help entries for 13 aliases [useReq] *(help)*
   - ar: zip -> tar.gz archive named after the latest tag (REQ-012)
   - ll: full-hash history graph instead of 'latest full commit hash'
@@ -14,6 +33,24 @@
   - add failing-first reproducer test for corrected help contracts
 
 ### 🚜  Changes
+- gate release build and publish on test job [useReq] *(release-workflow)*
+  - Add the test-release GitHub Actions job running uv lock --check and the
+  - full pytest suite via uv run pytest, mirroring the scripts/pre-release-
+  - check.sh validation chain, and gate build-release on it through needs:
+  - [check-branch, test-release]. A failing test job now skips distribution
+  - build, provenance attestation, GitHub Release upload, and PyPI OIDC
+  - publication (REQ-228, REQ-229). Update the checkout@v5 pin contract to
+  - three jobs and extend the workflow contract suite accordingly; update
+  - SRS to v1.39.
+- remove build and intermediate artifacts after run [useReq] *(pre-release-check)*
+  - Extend the EXIT cleanup so scripts/pre-release-check.sh leaves the
+  - repository free of every validation artifact it created: temporary
+  - build directory, setuptools build/ tree, src/*.egg-info directories,
+  - .pytest_cache, and __pycache__ under src/ and tests/, while preserving
+  - tracked files and the uv-managed .venv environment (REQ-223, REQ-226,
+  - REQ-227). Extend fake-uv build shim with residue creation and assert
+  - artifact removal in the HDT suite. Update SRS to v1.38 and reflect the
+  - renamed cleanup_validation_artifacts node in WORKFLOW.md.
 - accept --dev/--develop on major/minor/patch [useReq] *(release-flags)*
   - Requirements (v1.36): REQ-203 reworded so the --develop/--dev rejection applies only when the first CLI token is outside --upgrade/major/minor/patch, resolving the collision with REQ-200/REQ-045; added REQ-214/REQ-215/REQ-216 requiring inline-help and README documentation of the flags' dual meaning.
   - Source: main now whitelists major/minor/patch as first tokens, reports the allowed commands in the rejection message, and MANAGEMENT_HELP/--upgrade plus HELP_TEXTS major/minor/patch spell out the two different meanings (GitHub newest-tagged-release install vs develop-scoped release).
@@ -983,7 +1020,7 @@
 - \[0.47.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.47.0
 - \[0.48.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.48.0
 - \[0.49.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.49.0
-- \[0.49.2\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.49.2
+- \[0.50.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.50.0
 
 [0.1.0]: https://github.com/Ogekuri/GAlias/releases/tag/v0.1.0
 [0.2.0]: https://github.com/Ogekuri/GAlias/compare/v0.1.0..v0.2.0
@@ -1034,4 +1071,4 @@
 [0.47.0]: https://github.com/Ogekuri/GAlias/compare/v0.46.0..v0.47.0
 [0.48.0]: https://github.com/Ogekuri/GAlias/compare/v0.47.0..v0.48.0
 [0.49.0]: https://github.com/Ogekuri/GAlias/compare/v0.48.0..v0.49.0
-[0.49.2]: https://github.com/Ogekuri/GAlias/compare/v0.49.0..v0.49.2
+[0.50.0]: https://github.com/Ogekuri/GAlias/compare/v0.49.0..v0.50.0

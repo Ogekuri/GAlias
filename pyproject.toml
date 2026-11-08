@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "galias"
-version = "0.49.2"
+version = "0.50.0"
 description = "Emulate personalized git aliases via an uvx-compatible interface."
 readme = "README.md"
 requires-python = ">=3.11"
