@@ -6,6 +6,8 @@ HDT artifacts (Generator mode):
   - `core._normalize_version_rule_pattern` (Level 0)
   - `core._split_negation_pattern` (Level 0)
   - `core._load_config_rules` (Level 0, reads `core.CONFIG`)
+  - `core._build_version_negation_specs` (Level 1, depends on `_split_negation_pattern`
+    and `_normalize_version_rule_pattern`)
   - `core._collect_version_files` (Level 1, depends on inventory + pathspec)
   - `core._prepare_version_rule_contexts` (Level 2, depends on `_collect_version_files`)
 - Call graph: `_prepare_version_rule_contexts` -> `_build_version_negation_specs`,
@@ -20,6 +22,7 @@ HDT artifacts (Generator mode):
 
 import tempfile
 import unittest
+import warnings
 from pathlib import Path
 from unittest import mock
 
@@ -128,6 +131,17 @@ class VerRulePatternTest(unittest.TestCase):
             actual_files = core._collect_version_files(root, "\\!important.txt")
             # Assert
             self.assertEqual(actual_files, expected_files)
+
+    def test_negation_specs_compile_without_deprecation_warning(self):
+        # Arrange
+        rules = [("!docs/README.md", None)]
+        expected_specs = 1
+        # Act
+        with warnings.catch_warnings():
+            warnings.simplefilter("error", DeprecationWarning)
+            actual_specs = core._build_version_negation_specs(rules)
+        # Assert
+        self.assertEqual(len(actual_specs), expected_specs)
 
     def test_negation_excludes_file_from_other_rule(self):
         # Arrange

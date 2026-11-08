@@ -2169,7 +2169,7 @@ class VersionRuleContext:
 ## @brief Normalize a `ver_rules` pattern to the internal pathspec matching form.
 # @details Strips surrounding blanks, strips a leading `./`, and anchors patterns containing `/`
 #          to repository root by prefixing `/` when missing. Backslash sequences are preserved
-#          verbatim so pathspec gitwildmatch applies gitignore(5) escape semantics.
+#          verbatim so pathspec gitignore-style matching applies gitignore(5) escape semantics.
 # @param pattern {str} Input pattern string from configuration.
 # @return {str} Normalized pathspec-compatible pattern string; empty string when input is blank.
 # @satisfies REQ-160, REQ-164
@@ -2219,7 +2219,8 @@ def _version_pathspec_matches(spec, normalized_pattern: str, relative: str) -> b
 ## @brief Compile exclusion pathspecs from negation `ver_rules` patterns.
 # @details Collects every rule pattern starting with `!`, strips the prefix, normalizes the
 #          remainder with the shared normalization contract, and compiles each base pattern
-#          as a positive gitwildmatch spec.
+#          as a positive gitignore-style spec via the supported pathspec `gitignore`
+#          registered style (the legacy `gitwildmatch` name is deprecated by pathspec).
 # @param rules {List[Tuple[str, Optional[str]]]} Parsed `(pattern, regex)` rule pairs.
 # @return {List[pathspec.PathSpec]} Compiled exclusion pathspecs; empty when no negation pattern is configured.
 # @satisfies REQ-161
@@ -2234,7 +2235,7 @@ def _build_version_negation_specs(rules) -> List:
         base = _normalize_version_rule_pattern(base_text)
         if not base:
             continue
-        specs.append(pathspec.PathSpec.from_lines("gitwildmatch", [base]))
+        specs.append(pathspec.PathSpec.from_lines("gitignore", [base]))
     return specs
 
 
