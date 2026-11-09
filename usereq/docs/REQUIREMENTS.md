@@ -16,13 +16,14 @@ tags: ["requirements", "srs", "galias"]
 ---
 
 # GAlias CLI Requirements
-**Version**: 1.40
+**Version**: 1.41
 **Author**: Francesco Rolando
-**Date**: 2026-11-08
+**Date**: 2026-11-09
 
 ## Revision History
 | Date | Version | Change Summary |
 |------|---------|----------------|
+| 2026-11-09 | 1.41 | Changed `changelog` multiline commit rendering: description lines after the first are preserved verbatim without sub-bullet transformation while keeping `Co-authored-by`/empty-line cleanup and the `- <description> *(<scope>)*` top-level bullet format (REQ-078, REQ-232, REQ-233). |
 | 2026-11-08 | 1.40 | Added `--ver`/`--version` GitHub latest-version failure reporting: resolution failures now print `GitHub latest: unknown (<reason>)` with the intercepted failure reason, including HTTP status code and the API rate-limit message (REQ-230, REQ-231). |
 | 2026-11-07 | 1.39 | Added the `test-release` GitHub Actions job running `uv lock --check` plus the full pytest suite and gated `build-release` on it, preventing release artifacts and any publication when tests fail (REQ-228, REQ-229). |
 | 2026-11-07 | 1.38 | Tightened `scripts/pre-release-check.sh` post-run cleanup so execution leaves the repository free of build and intermediate validation artifacts, preserving only the uv-managed environment (REQ-223, REQ-226, REQ-227). |
@@ -224,7 +225,9 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-143**: MUST the `wtd` worktree-delete alias execute `git worktree remove <worktree>` when the target worktree has no associated local branch and `--force` is absent.
 - **REQ-144**: MUST when `--force` is supplied without an association, `bd` execute `git branch -D <branch>` and `wtd` execute `git worktree remove --force <worktree>`.
 - **REQ-145**: MUST when `--force` is supplied with an association, `bd` and `wtd` delete the associated worktree with `git worktree remove --force <path>` before deleting the branch with `git branch -D <branch>`.
-- **REQ-078**: MUST changelog markdown MUST render one top-level bullet per commit; multiline description lines MUST become consecutive indented sub-bullets; renderer MUST NOT insert blank separator lines between consecutive top-level commit bullets.
+- **REQ-078**: MUST changelog markdown MUST render one top-level bullet per commit as `- <description> *(<scope>)*`, where the ` *(<scope>)*` suffix is present only when the parsed scope is non-empty.
+- **REQ-232**: MUST changelog rendering preserve each cleaned description line after the first verbatim as a plain line with no bullet or indentation transformation.
+- **REQ-233**: MUST changelog rendering MUST NOT insert blank separator lines between consecutive top-level commit bullets.
 - **REQ-079**: MUST the `ls` alias MUST run `git ls-files --exclude-standard` and MUST pass any additional arguments to the git command unchanged.
 - **REQ-080**: MUST the `lsi` alias MUST run `git ls-files --others --ignored --exclude-standard`, MUST filter output by excluding paths where any path component matches any entry in `LSI_DEFAULT_EXCLUDED_DIRS` or ends with any suffix in `LSI_DEFAULT_EXCLUDED_DIR_SUFFIXES`, and MUST pass any additional arguments to the git command unchanged.
 - **REQ-081**: MUST the `lsa` alias MUST run `git ls-files --others --exclude-standard` and MUST pass any additional arguments to the git command unchanged.
@@ -410,6 +413,8 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-192** evidence: `src/git_alias/core.py` `DEFAULT_CONFIG` key order plus `GLOBAL_CONFIG_KEYS` order driving `print_all_help` Configuration Parameters rendering.
 - **REQ-015** evidence: `src/git_alias/core.py` `_write_missing_config_values` normalizes only `GLOBAL_CONFIG_KEYS` entries, so out-of-scope global keys such as legacy `editor` are ignored and never persisted.
 - **REQ-207** evidence: `src/git_alias/core.py` `_load_config_rules` reads only `entry.get("pattern")` and `print_all_help` renders only the `pattern` field; entries lacking `pattern` are ignored or rendered empty.
+- **REQ-232** evidence: `src/git_alias/core.py` `_format_changelog_description` returns cleaned description lines verbatim and `categorize_commit` joins continuation lines after the top-level bullet without bullet or indentation prefixes.
+- **REQ-233** evidence: `src/git_alias/core.py` `generate_section_for_range` appends entry blocks contiguously under each section header and emits a single trailing blank line only after each section block.
 - **REQ-217** evidence: `scripts/pre-release-check.sh` executable Bash script implementing the official-release pre-validation entrypoint.
 - **REQ-218** evidence: `scripts/pre-release-check.sh` `REPO_ROOT` resolution from `BASH_SOURCE` followed by repository-root execution.
 - **REQ-219** evidence: `scripts/pre-release-check.sh` `git --version` and `uv --version` prerequisite steps with explicit English abort diagnostics.

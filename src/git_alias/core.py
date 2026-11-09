@@ -1857,33 +1857,40 @@ def parse_conventional_commit(
     return (ctype, scope, breaking, desc)
 
 
-## @brief Execute `_format_changelog_description` runtime logic for Git-Alias CLI.
-# @details Normalizes a commit description for markdown list rendering while preserving logical lines.
-#          Removes `Co-authored-by:` trailer lines, drops empty lines, and strips leading markdown-list
-#          markers from continuation lines so multiline descriptions can be rendered as nested bullets.
-# @param desc Parsed commit description.
-# @return Ordered non-empty description lines ready for markdown rendering.
+## @brief Normalize a commit description for changelog rendering while preserving logical lines.
+# @details Removes `Co-authored-by:` trailer lines (REQ-044), drops empty lines (REQ-044),
+#          and trims surrounding whitespace on every line. Continuation lines are returned
+#          verbatim so `categorize_commit` preserves multiline commit formatting without
+#          bullet or indentation transformation (REQ-232).
+# @param desc {str} Parsed commit description text (subject remainder plus body).
+# @return {List[str]} Ordered non-empty cleaned description lines in original logical order.
+# @note Complexity: O(L) where L is the number of description lines.
+# @see categorize_commit
+# @satisfies REQ-044, REQ-232
 def _format_changelog_description(desc: str) -> List[str]:
     lines = [line.strip() for line in desc.strip().splitlines()]
     filtered_lines = [
         line for line in lines if not re.match(r"^Co-authored-by:.*$", line)
     ]
-    non_empty_lines = [line for line in filtered_lines if line]
-    if not non_empty_lines:
-        return []
-    normalized_lines = [non_empty_lines[0]]
-    for line in non_empty_lines[1:]:
-        normalized_lines.append(re.sub(r"^(?:[-*+]|\d+[.)])\s+", "", line))
-    return normalized_lines
+    return [line for line in filtered_lines if line]
 
 
-## @brief Execute `categorize_commit` runtime logic for Git-Alias CLI.
-# @details Parses a conventional commit message and maps it to a changelog section and formatted entry line.
-#          Entry format: `- <description> *(<scope>)*` when scope is present; `- <description>` otherwise.
-#          Multiline descriptions are rendered as consecutive indented sub-bullets under the commit line.
-#          When the breaking marker is present, the first description line is prefixed with `BREAKING CHANGE: `.
-# @param subject Conventional commit message string.
-# @return Tuple `(section, line)`: `section` is the changelog section name or `None` if type is unmapped or ignored; `line` is the formatted entry string or `""` when section is `None`.
+## @brief Map a conventional commit message to a changelog section and formatted entry.
+# @details Parses the conventional header and renders one top-level bullet:
+#          `- <description> *(<scope>)*` when scope is present, `- <description>`
+#          otherwise (REQ-078). Cleaned description lines after the first are
+#          joined verbatim as plain lines with no bullet or indentation
+#          transformation (REQ-232); entry blocks never carry blank separator
+#          lines because `generate_section_for_range` appends entries
+#          contiguously (REQ-233). When the breaking marker is present, the
+#          first description line is prefixed with `BREAKING CHANGE: `.
+# @param subject {str} Conventional commit message string (subject plus optional body).
+# @return {Tuple[Optional[str], str]} `(section, line)`: `section` is the changelog
+#         section name or `None` if type is unmapped or ignored; `line` is the
+#         formatted entry string or `""` when section is `None`.
+# @note Complexity: O(L) where L is the number of description lines.
+# @see _format_changelog_description, generate_section_for_range
+# @satisfies REQ-078, REQ-232, REQ-233
 def categorize_commit(subject: str) -> Tuple[Optional[str], str]:
     parsed = parse_conventional_commit(subject)
     if not parsed:
@@ -1897,7 +1904,7 @@ def categorize_commit(subject: str) -> Tuple[Optional[str], str]:
     scope_text = f" *({scope})*" if scope else ""
     line = f"- {desc_lines[0]}{scope_text}"
     if len(desc_lines) > 1:
-        line = "\n".join([line, *[f"  - {item}" for item in desc_lines[1:]]])
+        line = "\n".join([line, *desc_lines[1:]])
     mapping = {
         "new": "Features",
         "implement": "Implementations",
