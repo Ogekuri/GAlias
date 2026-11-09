@@ -345,12 +345,12 @@ class ChangelogCommandTest(unittest.TestCase):
         self.assertEqual(section, "Changes")
         self.assertEqual(line, "- first line *(core)*\nthird line")
 
-    def test_categorize_commit_preserves_markdown_list_body_verbatim(self):
+    def test_categorize_commit_flattens_markdown_list_body_to_semicolon_list(self):
         section, line = core.categorize_commit(
             "change(changelog): headline\n\n- first detail\n- second detail"
         )
         self.assertEqual(section, "Changes")
-        self.assertEqual(line, "- headline *(changelog)*\n- first detail\n- second detail")
+        self.assertEqual(line, "- headline *(changelog)*\nfirst detail; second detail")
 
     def test_generate_section_keeps_commit_bullets_consecutive(self):
         with mock.patch.object(

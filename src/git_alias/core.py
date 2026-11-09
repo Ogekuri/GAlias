@@ -1857,40 +1857,64 @@ def parse_conventional_commit(
     return (ctype, scope, breaking, desc)
 
 
-## @brief Normalize a commit description for changelog rendering while preserving logical lines.
+## @brief Normalize a commit description for readable changelog entry rendering.
 # @details Removes `Co-authored-by:` trailer lines (REQ-044), drops empty lines (REQ-044),
-#          and trims surrounding whitespace on every line. Continuation lines are returned
-#          verbatim so `categorize_commit` preserves multiline commit formatting without
-#          bullet or indentation transformation (REQ-232).
+#          and trims surrounding whitespace on every line. The first line is kept verbatim.
+#          From the second line on, non-bullet lines are preserved verbatim (REQ-232); every
+#          line starting with a markdown bullet marker (`-`, `*`, `+`, `1.`, `1)` plus
+#          whitespace) has its marker stripped (REQ-234), and each maximal run of
+#          consecutive bullet items is collapsed into one line whose item texts are
+#          joined by `'; '` (REQ-235) so multiline commit text stays readable inside
+#          the changelog top-level bullet.
 # @param desc {str} Parsed commit description text (subject remainder plus body).
-# @return {List[str]} Ordered non-empty cleaned description lines in original logical order.
+# @return {List[str]} Ordered non-empty rendered description lines; no continuation
+#         line carries a leading markdown bullet marker.
 # @note Complexity: O(L) where L is the number of description lines.
+# @note A lone bullet marker without trailing whitespace does not match the marker
+#       regex and is treated as non-bullet text.
 # @see categorize_commit
-# @satisfies REQ-044, REQ-232
+# @satisfies REQ-044, REQ-232, REQ-234, REQ-235
 def _format_changelog_description(desc: str) -> List[str]:
     lines = [line.strip() for line in desc.strip().splitlines()]
     filtered_lines = [
         line for line in lines if not re.match(r"^Co-authored-by:.*$", line)
     ]
-    return [line for line in filtered_lines if line]
+    cleaned_lines = [line for line in filtered_lines if line]
+    if not cleaned_lines:
+        return []
+    rendered_lines = [cleaned_lines[0]]
+    bullet_items = []
+    for line in cleaned_lines[1:]:
+        marker = re.match(r"^(?:[-*+]|\d+[.)])\s+", line)
+        if marker:
+            bullet_items.append(line[marker.end():].strip())
+            continue
+        if bullet_items:
+            rendered_lines.append("; ".join(bullet_items))
+            bullet_items = []
+        rendered_lines.append(line)
+    if bullet_items:
+        rendered_lines.append("; ".join(bullet_items))
+    return rendered_lines
 
 
 ## @brief Map a conventional commit message to a changelog section and formatted entry.
 # @details Parses the conventional header and renders one top-level bullet:
 #          `- <description> *(<scope>)*` when scope is present, `- <description>`
 #          otherwise (REQ-078). Cleaned description lines after the first are
-#          joined verbatim as plain lines with no bullet or indentation
-#          transformation (REQ-232); entry blocks never carry blank separator
-#          lines because `generate_section_for_range` appends entries
-#          contiguously (REQ-233). When the breaking marker is present, the
-#          first description line is prefixed with `BREAKING CHANGE: `.
+#          emitted as plain lines with no indentation transformation: non-bullet
+#          lines stay verbatim (REQ-232) while markdown bullet-marker runs are
+#          flattened into `'; '`-joined lines (REQ-234, REQ-235); entry blocks
+#          never carry blank separator lines because `generate_section_for_range`
+#          appends entries contiguously (REQ-233). When the breaking marker is
+#          present, the first description line is prefixed with `BREAKING CHANGE: `.
 # @param subject {str} Conventional commit message string (subject plus optional body).
 # @return {Tuple[Optional[str], str]} `(section, line)`: `section` is the changelog
 #         section name or `None` if type is unmapped or ignored; `line` is the
 #         formatted entry string or `""` when section is `None`.
 # @note Complexity: O(L) where L is the number of description lines.
 # @see _format_changelog_description, generate_section_for_range
-# @satisfies REQ-078, REQ-232, REQ-233
+# @satisfies REQ-078, REQ-232, REQ-233, REQ-234, REQ-235
 def categorize_commit(subject: str) -> Tuple[Optional[str], str]:
     parsed = parse_conventional_commit(subject)
     if not parsed:
