@@ -1,7 +1,21 @@
 # Changelog
 
-## [0.50.1](https://github.com/Ogekuri/GAlias/compare/v0.50.0..v0.50.1) - 2026-11-08
+## [0.51.0](https://github.com/Ogekuri/GAlias/compare/v0.50.0..v0.51.0) - 2026-11-09
 ### 🚜  Changes
+- flatten markdown bullet lists to semicolon lists [useReq] *(changelog)*
+  - New REQ-234: strip leading markdown bullet markers from continuation lines.
+  - New REQ-235: collapse consecutive bullet-item runs into '; '-joined lines.
+  - REQ-232 narrowed: only non-bullet continuation lines stay verbatim.
+  - _format_changelog_description implements stripping and '; ' flattening.
+  - categorize_commit Doxygen contract updated for REQ-234/REQ-235.
+  - Changelog test realigned to the semicolon-list rendering contract.
+- preserve multiline commit body verbatim in entries [useReq] *(changelog)*
+  - REQ-078 rewritten: one top-level bullet `- <description> *(<scope>)*` per commit.
+  - New REQ-232: continuation description lines render verbatim, no sub-bullets.
+  - New REQ-233: no blank separator lines between consecutive commit bullets.
+  - _format_changelog_description keeps Co-authored-by/empty-line cleanup only.
+  - categorize_commit drops sub-bullet generation; Doxygen docstrings updated.
+  - Changelog tests realigned to the updated rendering contract.
 - report GitHub fetch failure reason in --ver output [useReq] *(version-check)*
   - Encode REQ-230/REQ-231 in the SRS: failed GitHub latest-version
   - resolution now prints 'GitHub latest: unknown (<reason>)' instead of a
@@ -1033,7 +1047,7 @@
 - \[0.48.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.48.0
 - \[0.49.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.49.0
 - \[0.50.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.50.0
-- \[0.50.1\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.50.1
+- \[0.51.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.51.0
 
 [0.1.0]: https://github.com/Ogekuri/GAlias/releases/tag/v0.1.0
 [0.2.0]: https://github.com/Ogekuri/GAlias/compare/v0.1.0..v0.2.0
@@ -1085,4 +1099,4 @@
 [0.48.0]: https://github.com/Ogekuri/GAlias/compare/v0.47.0..v0.48.0
 [0.49.0]: https://github.com/Ogekuri/GAlias/compare/v0.48.0..v0.49.0
 [0.50.0]: https://github.com/Ogekuri/GAlias/compare/v0.49.0..v0.50.0
-[0.50.1]: https://github.com/Ogekuri/GAlias/compare/v0.50.0..v0.50.1
+[0.51.0]: https://github.com/Ogekuri/GAlias/compare/v0.50.0..v0.51.0
