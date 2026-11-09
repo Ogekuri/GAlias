@@ -333,7 +333,7 @@ class UpdateCheckTest(unittest.TestCase):
         self.assertEqual(data["last_check_unix"], 0)
 
     def test_upgrade_self_installs_latest_pypi_release(self):
-        # REQ-001: default --upgrade reinstalls from PyPI; REQ-199: no git source.
+        # REQ-001: default --upgrade runs the standard unforced install from PyPI.
         with mock.patch.object(core, "_is_linux_platform", return_value=True):
             with mock.patch.object(core, "_run_checked") as run_checked:
                 core.upgrade_self(Path("/repo"))
@@ -343,7 +343,27 @@ class UpdateCheckTest(unittest.TestCase):
                 "tool",
                 "install",
                 core.UV_TOOL_NAME,
-                "--force",
+            ]
+        )
+
+    ## @brief Verify `--upgrade --force` appends the uv forcing options (REQ-236).
+    # @details Mock the platform and subprocess boundaries; assert the PyPI
+    #          install argv carries `--force --reinstall --refresh` for the
+    #          forced download plus complete reinstallation.
+    # @param self {UpdateCheckTest} Isolated test instance.
+    # @return {None} Assert REQ-236 forced PyPI upgrade argv.
+    def test_upgrade_self_force_installs_with_forcing_options(self):
+        # REQ-236: --upgrade --force executes uv tool install with forcing options.
+        with mock.patch.object(core, "_is_linux_platform", return_value=True):
+            with mock.patch.object(core, "_run_checked") as run_checked:
+                core.upgrade_self(Path("/repo"), force=True)
+        run_checked.assert_called_once_with(
+            [
+                "uv",
+                "tool",
+                "install",
+                core.UV_TOOL_NAME,
+                *core.UV_TOOL_FORCE_UPGRADE_OPTIONS,
             ]
         )
 
@@ -367,7 +387,32 @@ class UpdateCheckTest(unittest.TestCase):
                 "uv",
                 "tool",
                 "install",
-                "--force",
+                "--from",
+                f"{core.GITHUB_UPGRADE_SOURCE}@v1.2.3",
+                core.UV_TOOL_NAME,
+            ]
+        )
+
+    ## @brief Verify the forced GitHub-sourced self-upgrade appends the forcing options (REQ-237).
+    # @details Mock the tag-resolution, platform-gate, and subprocess boundaries;
+    #          assert the forced install argv carries `--force --reinstall
+    #          --refresh` before the `--from` override.
+    # @param self {UpdateCheckTest} Isolated test instance.
+    # @return {None} Assert REQ-237 forced GitHub upgrade argv.
+    def test_upgrade_self_github_force_installs_with_forcing_options(self):
+        # REQ-237: --upgrade --develop --force executes uv tool install with forcing options.
+        with mock.patch.object(
+            core, "_fetch_github_latest_release_tag", return_value="v1.2.3"
+        ):
+            with mock.patch.object(core, "_is_linux_platform", return_value=True):
+                with mock.patch.object(core, "_run_checked") as run_checked:
+                    core.upgrade_self(Path("/repo"), github=True, force=True)
+        run_checked.assert_called_once_with(
+            [
+                "uv",
+                "tool",
+                "install",
+                *core.UV_TOOL_FORCE_UPGRADE_OPTIONS,
                 "--from",
                 f"{core.GITHUB_UPGRADE_SOURCE}@v1.2.3",
                 core.UV_TOOL_NAME,

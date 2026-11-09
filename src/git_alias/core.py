@@ -85,18 +85,27 @@ GITHUB_LATEST_RELEASE_API = (
 ## @satisfies REQ-201, REQ-209
 GITHUB_UPGRADE_SOURCE = f"git+https://github.com/{GITHUB_REPOSITORY}"
 ## @brief Self-upgrade command installing the latest PyPI release.
-## @details Executes `uv tool install galias --force` so Astral uv reinstalls
-##          the tool from the PyPI default source (REQ-001); the default path
-##          carries no `--from` override, keeping PyPI the only default upgrade
-##          source (REQ-199, REQ-201).
-## @satisfies REQ-001, REQ-199
+## @details Executes `uv tool install galias` with no forcing options so the
+##          standard install/update process applies (REQ-001); the default
+##          path carries no `--from` override, keeping PyPI the only default
+##          upgrade source (REQ-199, REQ-201). Forced upgrades append
+##          `UV_TOOL_FORCE_UPGRADE_OPTIONS` (REQ-236).
+## @satisfies REQ-001, REQ-199, REQ-236
 UV_TOOL_UPGRADE_COMMAND = (
     "uv",
     "tool",
     "install",
     UV_TOOL_NAME,
-    "--force",
 )
+
+## @brief Forcing options appended to `uv tool install` for forced self-upgrades.
+## @details Tuple `("--force", "--reinstall", "--refresh")` appended to the
+##          selected upgrade argv when `--upgrade --force` (optionally with
+##          `--develop`/`--dev`) requests a forced download plus complete
+##          reinstallation (REQ-236, REQ-237); never appended on the standard
+##          unforced install path (REQ-001, REQ-209).
+## @satisfies REQ-236, REQ-237
+UV_TOOL_FORCE_UPGRADE_OPTIONS = ("--force", "--reinstall", "--refresh")
 ## @brief Constant `UV_TOOL_UNINSTALL_COMMAND` used by CLI runtime paths and policies.
 UV_TOOL_UNINSTALL_COMMAND = ("uv", "tool", "uninstall", UV_TOOL_NAME)
 
@@ -223,7 +232,7 @@ MANAGEMENT_HELP = [
         "--write-config",
         "Insert missing defaults into repository .galias.conf and global $HOME/.config/galias/config.json.",
     ),
-    ("--upgrade", "Reinstall galias on Linux; print manual command elsewhere. Combine with --develop or --dev to install the newest tagged release from GitHub. Note: --dev/--develop mean something different on major/minor/patch, where they limit the release to the configured develop branch."),
+    ("--upgrade", "Reinstall galias on Linux; print manual command elsewhere. Combine with --develop or --dev to install the newest tagged release from GitHub. Add --force to force the download and a complete reinstallation. Note: --dev/--develop mean something different on major/minor/patch, where they limit the release to the configured develop branch."),
     ("--uninstall", "Uninstall galias on Linux; print manual command elsewhere."),
     ("--ver", "Print the CLI version with the latest PyPI and GitHub release versions."),
     ("--version", "Print the CLI version with the latest PyPI and GitHub release versions."),
@@ -579,21 +588,28 @@ def check_for_newer_version(
 # @details Composes the REQ-209 self-upgrade command by appending the
 #          REQ-208-resolved release tag to `GITHUB_UPGRADE_SOURCE` as the
 #          pip/uv direct-URL reference `git+https://github.com/Ogekuri/GAlias@<tag>`,
-#          so Astral uv reinstalls the tool from the newest tagged release
-#          regardless of the branch containing it (REQ-201).
+#          so Astral uv installs the tool from the newest tagged release
+#          regardless of the branch containing it (REQ-201). With `force`
+#          enabled, `UV_TOOL_FORCE_UPGRADE_OPTIONS` is inserted before the
+#          `--from` override so the install becomes a forced download plus
+#          complete reinstallation (REQ-237); the unforced path carries no
+#          forcing options (REQ-209).
 # @param tag {str} Raw GitHub release tag name (REQ-208), including any leading `v`.
-# @return {Tuple[str, ...]} `uv tool install --force --from <source>@<tag> galias` argv.
-# @satisfies REQ-209, REQ-201
-def _build_github_upgrade_command(tag: str) -> Tuple[str, ...]:
-    return (
-        "uv",
-        "tool",
-        "install",
-        "--force",
-        "--from",
-        f"{GITHUB_UPGRADE_SOURCE}@{tag}",
-        UV_TOOL_NAME,
+# @param force {bool} When True, prepend the uv forcing options (REQ-237).
+# @return {Tuple[str, ...]} `uv tool install [--force --reinstall --refresh] --from <source>@<tag> galias` argv.
+# @satisfies REQ-209, REQ-237, REQ-201
+def _build_github_upgrade_command(tag: str, force: bool = False) -> Tuple[str, ...]:
+    command: List[str] = ["uv", "tool", "install"]
+    if force:
+        command.extend(UV_TOOL_FORCE_UPGRADE_OPTIONS)
+    command.extend(
+        (
+            "--from",
+            f"{GITHUB_UPGRADE_SOURCE}@{tag}",
+            UV_TOOL_NAME,
+        )
     )
+    return tuple(command)
 
 
 ## @brief Compose a non-empty English failure reason for an intercepted GitHub fetch exception.
@@ -3725,23 +3741,39 @@ def _print_non_linux_management_command(
 #          `_fetch_github_latest_release_tag` (REQ-208) and installs through
 #          `_build_github_upgrade_command` (REQ-209); resolution failure
 #          aborts with an explicit English error and non-zero exit before any
-#          install (REQ-210). Non-Linux hosts receive the exact manual command
-#          matching the selected source without local execution (REQ-129).
+#          install (REQ-210). When `force` is True the executed argv appends
+#          `UV_TOOL_FORCE_UPGRADE_OPTIONS` (`--force --reinstall --refresh`)
+#          so uv performs a forced download plus complete reinstallation
+#          (REQ-236, REQ-237); when `force` is False the standard unforced
+#          install/update process runs (REQ-001, REQ-209). Non-Linux hosts
+#          receive the exact manual command matching the selected source and
+#          force mode without local execution (REQ-129).
 # @param repo_root Input parameter consumed by `upgrade_self`.
 # @param github {bool} When True, upgrade from the newest GitHub release tag
 #        (REQ-201, REQ-208, REQ-209) instead of the default PyPI release
 #        (REQ-001).
+# @param force {bool} When True, append the uv forcing options
+#        `--force --reinstall --refresh` to the selected install argv
+#        (REQ-236, REQ-237); when False, run the standard install with no
+#        forcing options (REQ-001, REQ-209).
 # @return None; side-effect: uv tool install subprocess, manual-command
 #         guidance, or English abort diagnostic with non-zero exit.
 # @exception SystemExit Exit code 1 when REQ-208 tag resolution fails (REQ-210).
-# @satisfies REQ-001, REQ-129, REQ-201, REQ-208, REQ-209, REQ-210
-def upgrade_self(repo_root: Optional[Path] = None, github: bool = False):
+# @satisfies REQ-001, REQ-129, REQ-201, REQ-208, REQ-209, REQ-210, REQ-236, REQ-237
+def upgrade_self(
+    repo_root: Optional[Path] = None,
+    github: bool = False,
+    force: bool = False,
+):
     del repo_root
     if not github:
+        command = UV_TOOL_UPGRADE_COMMAND
+        if force:
+            command = UV_TOOL_UPGRADE_COMMAND + UV_TOOL_FORCE_UPGRADE_OPTIONS
         if not _is_linux_platform():
-            _print_non_linux_management_command("upgrade", UV_TOOL_UPGRADE_COMMAND)
+            _print_non_linux_management_command("upgrade", command)
             return
-        _run_checked(list(UV_TOOL_UPGRADE_COMMAND))
+        _run_checked(list(command))
         return
     latest_tag = _fetch_github_latest_release_tag(
         timeout_seconds=VERSION_CHECK_TIMEOUT_SECONDS
@@ -3752,7 +3784,7 @@ def upgrade_self(repo_root: Optional[Path] = None, github: bool = False):
             file=sys.stderr,
         )
         sys.exit(1)
-    command = _build_github_upgrade_command(latest_tag)
+    command = _build_github_upgrade_command(latest_tag, force=force)
     if not _is_linux_platform():
         _print_non_linux_management_command("upgrade", command)
         return
@@ -6007,11 +6039,13 @@ def print_all_help():
 #          selects the PyPI default source or the GitHub source via
 #          `--develop` (equivalent `--dev`) (REQ-001, REQ-201) and rejects
 #          `--develop`/`--dev` outside `--upgrade`/`major`/`minor`/`patch`
-#          (REQ-203).
+#          (REQ-203); rejects a first-token `--force` outside `--upgrade`
+#          (REQ-238) and forwards the `--force` selector so the install argv
+#          carries the uv forcing options when requested (REQ-236, REQ-237).
 # @param argv Input parameter consumed by `main`.
 # @param check_updates Input parameter consumed by `main`.
 # @return Result emitted by `main` according to command contract.
-# @satisfies REQ-001, REQ-030, REQ-201, REQ-202, REQ-203, REQ-230
+# @satisfies REQ-001, REQ-030, REQ-201, REQ-202, REQ-203, REQ-230, REQ-238
 def main(argv=None, *, check_updates: bool = True):
     args = list(argv) if argv is not None else sys.argv[1:]
     force_online_update_check = bool(args) and args[0] in ("--ver", "--version")
@@ -6042,6 +6076,12 @@ def main(argv=None, *, check_updates: bool = True):
             file=sys.stderr,
         )
         sys.exit(1)
+    if "--force" in args and args[0] != "--upgrade":
+        print(
+            "Option '--force' is supported only with '--upgrade'.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
     if args[0] in ("--ver", "--version"):
         github_latest_version, github_failure_reason = _fetch_github_latest_version(
             timeout_seconds=VERSION_CHECK_TIMEOUT_SECONDS
@@ -6057,7 +6097,11 @@ def main(argv=None, *, check_updates: bool = True):
         write_default_config(git_root)
         return
     if args[0] == "--upgrade":
-        upgrade_self(git_root, github=("--develop" in args or "--dev" in args))
+        upgrade_self(
+            git_root,
+            github=("--develop" in args or "--dev" in args),
+            force=("--force" in args),
+        )
         return
     if args[0] == "--uninstall":
         uninstall_self()

@@ -16,13 +16,14 @@ tags: ["requirements", "srs", "galias"]
 ---
 
 # GAlias CLI Requirements
-**Version**: 1.42
+**Version**: 1.43
 **Author**: Francesco Rolando
 **Date**: 2026-11-09
 
 ## Revision History
 | Date | Version | Change Summary |
 |------|---------|----------------|
+| 2026-11-09 | 1.43 | Added the `--upgrade` auxiliary `--force` flag forcing download and complete reinstallation through the uv forcing options `--force --reinstall --refresh` on both PyPI and GitHub sources while the unforced path runs the standard install (REQ-001, REQ-129, REQ-209, REQ-236..REQ-240). |
 | 2026-11-09 | 1.42 | Changed `changelog` multiline rendering: markdown bullet lists in description lines after the first are stripped and replaced with `'; '`-separated lines while non-bullet lines stay verbatim, keeping cleanup and assembly logic (REQ-232, REQ-234, REQ-235). |
 | 2026-11-09 | 1.41 | Changed `changelog` multiline commit rendering: description lines after the first are preserved verbatim without sub-bullet transformation while keeping `Co-authored-by`/empty-line cleanup and the `- <description> *(<scope>)*` top-level bullet format (REQ-078, REQ-232, REQ-233). |
 | 2026-11-08 | 1.40 | Added `--ver`/`--version` GitHub latest-version failure reporting: resolution failures now print `GitHub latest: unknown (<reason>)` with the intercepted failure reason, including HTTP status code and the API rate-limit message (REQ-230, REQ-231). |
@@ -117,9 +118,9 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **DES-009**: MUST the global `--help` output MUST be ordered as usage, Management Commands, Configuration Parameters, and Commands, and Configuration Parameters MUST print resolved values from `.galias.conf` plus `$HOME/.config/galias/config.json`, otherwise defaults from `DEFAULT_CONFIG`.
 
 ### 3.2 Functional Requirements
-- **REQ-001**: MUST execute `uv tool install galias --force` installing the latest PyPI release when `--upgrade` without `--develop` or its equivalent `--dev` is invoked on Linux.
+- **REQ-001**: MUST execute `uv tool install galias` with no forcing options, installing the latest PyPI release, when `--upgrade` without `--develop`, `--dev`, or `--force` is invoked on Linux.
 - **REQ-002**: MUST when `--uninstall` is invoked on Linux, delete `~/.cache/galias/check_version_idle-time.json`, remove `~/.cache/galias`, and execute `uv tool uninstall galias`.
-- **REQ-129**: MUST NOT execute local `uv tool install` when `--upgrade` is invoked on non-Linux platforms, and MUST print the exact manual install command matching the selected source (PyPI or REQ-201 GitHub).
+- **REQ-129**: MUST NOT execute local `uv tool install` when `--upgrade` is invoked on non-Linux platforms, and MUST print the exact manual install command matching the selected source and `--force` mode (PyPI or REQ-201 GitHub).
 - **REQ-130**: MUST NOT execute local `uv tool uninstall` when `--uninstall` is invoked on non-Linux platforms, and MUST print the exact manual uninstall command for user execution.
 - **REQ-003**: MUST show global command help or specific command help via `--help`, and per-command help text MUST explicitly list supported options when present.
 - **REQ-004**: MUST execute `git add --all` for alias `aa` only after reusable diagnostics confirm pending unstaged/untracked changes, and MUST fail with explicit error when nothing can be added.
@@ -205,7 +206,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-203**: MUST reject `--develop` or `--dev` when the first CLI token is neither `--upgrade`, `major`, `minor`, nor `patch`, with an explicit English error and non-zero exit.
 - **REQ-204**: MUST resolve the GitHub release-check URL exactly as `https://api.github.com/repos/Ogekuri/GAlias/releases/latest` and parse `tag_name`, stripping one leading `v`.
 - **REQ-208**: MUST resolve the `--upgrade --develop`/`--dev` install ref by querying `https://api.github.com/repos/Ogekuri/GAlias/releases/latest` and parsing `tag_name` verbatim.
-- **REQ-209**: MUST execute `uv tool install --force --from git+https://github.com/Ogekuri/GAlias@<tag> galias` on Linux, where `<tag>` is the REQ-208-resolved `tag_name`.
+- **REQ-209**: MUST execute `uv tool install --from git+https://github.com/Ogekuri/GAlias@<tag> galias` without forcing options on Linux when `--force` is absent, where `<tag>` is the REQ-208-resolved `tag_name`.
 - **REQ-210**: MUST abort `--upgrade --develop`/`--dev` with an explicit English error and non-zero exit when REQ-208 resolution fails, without executing any install.
 - **REQ-230**: MUST when GitHub latest-version resolution fails during `--ver`/`--version`, print `GitHub latest: unknown (<reason>)` where `<reason>` is a non-empty English description of the intercepted failure.
 - **REQ-231**: MUST derive `<reason>` for GitHub HTTP transport failures from the HTTP status code, the HTTP reason phrase, and the API-provided `message` field when present; MUST derive `<reason>` from the exception text for every other GitHub resolution failure.
@@ -231,6 +232,11 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-233**: MUST changelog rendering MUST NOT insert blank separator lines between consecutive top-level commit bullets.
 - **REQ-234**: MUST changelog rendering strip a leading markdown bullet marker (`-`, `*`, `+`, `1.`, `1)`) from every cleaned description line after the first.
 - **REQ-235**: MUST changelog rendering collapse each maximal run of consecutive bullet-item description lines after the first into one line whose item texts are joined by `'; '`.
+- **REQ-236**: MUST execute `uv tool install galias --force --reinstall --refresh` when `--upgrade --force` without `--develop` or `--dev` is invoked on Linux.
+- **REQ-237**: MUST execute `uv tool install --force --reinstall --refresh --from git+https://github.com/Ogekuri/GAlias@<tag> galias` when `--upgrade --develop`/`--dev` runs with `--force` on Linux.
+- **REQ-238**: MUST accept `--force` as an auxiliary `--upgrade` flag combinable with `--develop`/`--dev`, and MUST reject `--force` as the first CLI token with any other command through an explicit English error and non-zero exit.
+- **REQ-239**: MUST document in `--upgrade` inline help that `--force` forces download and complete reinstallation through the uv forcing options.
+- **REQ-240**: MUST document in `README.md` that `--upgrade --force` forces download and complete reinstallation on both the PyPI and the GitHub install sources.
 - **REQ-079**: MUST the `ls` alias MUST run `git ls-files --exclude-standard` and MUST pass any additional arguments to the git command unchanged.
 - **REQ-080**: MUST the `lsi` alias MUST run `git ls-files --others --ignored --exclude-standard`, MUST filter output by excluding paths where any path component matches any entry in `LSI_DEFAULT_EXCLUDED_DIRS` or ends with any suffix in `LSI_DEFAULT_EXCLUDED_DIR_SUFFIXES`, and MUST pass any additional arguments to the git command unchanged.
 - **REQ-081**: MUST the `lsa` alias MUST run `git ls-files --others --exclude-standard` and MUST pass any additional arguments to the git command unchanged.
@@ -378,7 +384,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-196** evidence: `pyproject.toml` `[project]` table (`name`, `description`, `readme`, `requires-python`, `keywords`, `classifiers`) plus `[project.urls]` entries.
 - **REQ-197** evidence: `pyproject.toml` `license = "GPL-3.0-only"` SPDX expression, `license-files` declaration, and `build-system` `setuptools>=77.0.0` requirement.
 - **REQ-198** evidence: `README.md` Quick Start primary `uv tool install galias --force` command plus the dedicated uvx alternative-usage and GitHub install sections.
-- **REQ-001** evidence: `src/git_alias/core.py` `UV_TOOL_UPGRADE_COMMAND` constant (`uv tool install galias --force`, no `--from` override) executed by `upgrade_self` on Linux for the default PyPI path.
+- **REQ-001** evidence: `src/git_alias/core.py` `UV_TOOL_UPGRADE_COMMAND` constant (`uv tool install galias`, no forcing options, no `--from` override) executed by `upgrade_self` on Linux for the default PyPI path.
 - **REQ-124** evidence: `src/git_alias/core.py` `PYPI_LATEST_VERSION_API` constant and `check_for_newer_version` `info.version` JSON parsing.
 - **REQ-199** evidence: `src/git_alias/core.py` PyPI-only `PYPI_LATEST_VERSION_API`/`UV_TOOL_UPGRADE_COMMAND` constants driving the default check and upgrade paths; GitHub constants participate only via REQ-201/REQ-202 flows.
 - **REQ-201** evidence: `src/git_alias/core.py` `upgrade_self(github=True)` Linux path installing through `_build_github_upgrade_command` with the REQ-208-resolved release tag.
@@ -433,3 +439,8 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-225** evidence: `scripts/pre-release-check.sh` `run_step` fail-fast handler exiting non-zero at the first failed step.
 - **REQ-228** evidence: `.github/workflows/release-pypi.yml` `test-release` job running `uv lock --check` and `uv run pytest` after `actions/checkout@v5` and `astral-sh/setup-uv@v6`.
 - **REQ-229** evidence: `.github/workflows/release-pypi.yml` `build-release` `needs: [check-branch, test-release]` dependency making test failure skip build, attestation, GitHub Release, and PyPI publication.
+- **REQ-236** evidence: `src/git_alias/core.py` `UV_TOOL_FORCE_UPGRADE_OPTIONS` constant (`--force`, `--reinstall`, `--refresh`) appended to `UV_TOOL_UPGRADE_COMMAND` by `upgrade_self(force=True)` on the Linux PyPI path.
+- **REQ-237** evidence: `src/git_alias/core.py` `_build_github_upgrade_command(tag, force=True)` inserting `UV_TOOL_FORCE_UPGRADE_OPTIONS` before the `--from` override, executed by `upgrade_self(github=True, force=True)` on Linux.
+- **REQ-238** evidence: `src/git_alias/core.py` `main` first-token `--force` gate rejecting the token outside `--upgrade` with English stderr and non-zero exit, and the `--upgrade` dispatch forwarding `force=('--force' in args)`.
+- **REQ-239** evidence: `src/git_alias/core.py` `MANAGEMENT_HELP` `--upgrade` entry documenting the `--force` forced download and complete reinstallation.
+- **REQ-240** evidence: `README.md` Prerequisites, GitHub install, and Management Commands sections documenting `--upgrade --force`.

@@ -189,8 +189,9 @@ class ReleaseWorkflowPyPiTest(unittest.TestCase):
         for command in (
             "uv tool install galias",
             "uvx galias <command> [args...]",
-            "uv tool install --force --from git+https://github.com/Ogekuri/GAlias galias",
+            "uv tool install --from git+https://github.com/Ogekuri/GAlias galias",
             "g --upgrade --develop",
+            "g --upgrade --force",
         ):
             self.assertIn(command, readme)
         for removed in (

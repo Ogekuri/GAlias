@@ -240,6 +240,40 @@ class AliasHelpTest(unittest.TestCase):
                 upgrade_self.assert_called_once()
                 self.assertTrue(upgrade_self.call_args.kwargs.get("github"))
 
+    ## @brief Verify `--upgrade --force` routes the forced install selector (REQ-238).
+    # @details Mock the upgrade boundary; assert `force=True` for the forced
+    #          PyPI and GitHub paths (with and without `--develop`/`--dev`)
+    #          and `force=False` for the standard unforced path.
+    # @param self {AliasHelpTest} Isolated test instance.
+    # @return {None} Assert REQ-238 main-routing force selector (REQ-236, REQ-237).
+    def test_upgrade_force_flag_selects_forced_install(self):
+        for extra, expected_github, expected_force in (
+            ((), False, False),
+            (("--force",), False, True),
+            (("--develop", "--force"), True, True),
+            (("--force", "--dev"), True, True),
+        ):
+            with self.subTest(extra=extra):
+                argv = ["--upgrade", *extra]
+                with mock.patch.object(core, "upgrade_self") as upgrade_self:
+                    self.run_script_result(argv, check=True)
+                upgrade_self.assert_called_once()
+                self.assertIs(upgrade_self.call_args.kwargs.get("force"), expected_force)
+                self.assertIs(upgrade_self.call_args.kwargs.get("github"), expected_github)
+
+    ## @brief Verify a first-token `--force` outside `--upgrade` is rejected (REQ-238).
+    # @details The modifier is valid only with `--upgrade`; any other first
+    #          token exits non-zero with explicit English stderr guidance.
+    # @param self {AliasHelpTest} Isolated test instance.
+    # @return {None} Assert REQ-238 rejection.
+    def test_force_flag_without_upgrade_is_rejected(self):
+        code, _, err = self.run_script_result(["--force"], check=False)
+        self.assertNotEqual(code, 0)
+        self.assertIn("supported only with '--upgrade'", err)
+        code, _, err = self.run_script_result(["--ver", "--force"], check=False)
+        self.assertNotEqual(code, 0)
+        self.assertIn("supported only with '--upgrade'", err)
+
     ## @brief Verify release commands accept --dev/--develop through main (REQ-200, REQ-203).
     # @details The dispatcher must not reject the release-scope flags; mock
     #          the release boundary and assert each level dispatches with

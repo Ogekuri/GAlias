@@ -99,7 +99,7 @@ This allows them to be run both as a Python package (installed as <b>g</b> or <b
 ### Prerequisites
 
 - Supported runtime for the CLI: Linux, macOS, or Windows (with Git + Python 3.11+ available).
-- `--upgrade` installs from PyPI by default (`--develop` or `--dev` installs the newest tagged release from GitHub; note that on `major`/`minor`/`patch` the same flags instead limit the release to the configured `develop` branch) and `--uninstall` executes locally only on Linux; other platforms print the equivalent manual `uv tool` command.
+- `--upgrade` installs from PyPI by default (`--develop` or `--dev` installs the newest tagged release from GitHub; note that on `major`/`minor`/`patch` the same flags instead limit the release to the configured `develop` branch) and `--uninstall` executes locally only on Linux; other platforms print the equivalent manual `uv tool` command. Add `--force` to `--upgrade` to force the download and a complete reinstallation (the executed `uv tool install` gains `--force --reinstall --refresh`).
 - Install the `uv` tool from: [https://docs.astral.sh/uv/getting-started/installation/](https://docs.astral.sh/uv/getting-started/installation/)
 
 
@@ -117,12 +117,18 @@ This allows them to be run both as a Python package (installed as <b>g</b> or <b
 
   - Install from GitHub (intermediate and test releases)
   ```bash
-  uv tool install --force --from git+https://github.com/Ogekuri/GAlias galias
+  uv tool install --from git+https://github.com/Ogekuri/GAlias galias
   ```
 
   Upgrade to the latest version published on GitHub:
   ```bash
   g --upgrade --develop
+  ```
+
+  Force the download and a complete reinstallation on either source (`--force` adds the uv options `--force --reinstall --refresh`):
+  ```bash
+  g --upgrade --force
+  g --upgrade --develop --force
   ```
 
   - Run with the Repository-Local Launcher (no installation required)
@@ -200,7 +206,7 @@ The command must run from the `work` branch with a clean working tree; it bumps 
 
 Upgrade or uninstall the GAlias CLI:
 
-- `g --upgrade` / `galias --upgrade`: Reinstalls the tool from PyPI on Linux; `g --upgrade --develop` (or the equivalent `--dev`) reinstalls the newest tagged release from GitHub; on non-Linux platforms it prints the equivalent manual command. The same `--dev`/`--develop` flags have a different meaning on `major`/`minor`/`patch`, where they limit the release to the configured `develop` branch.
+- `g --upgrade` / `galias --upgrade`: Reinstalls the tool from PyPI on Linux; `g --upgrade --develop` (or the equivalent `--dev`) reinstalls the newest tagged release from GitHub; on non-Linux platforms it prints the equivalent manual command. Add `--force` to force the download and a complete reinstallation through the uv options `--force --reinstall --refresh`. The same `--dev`/`--develop` flags have a different meaning on `major`/`minor`/`patch`, where they limit the release to the configured `develop` branch.
 - `g --uninstall` / `galias --uninstall`: Uninstalls the tool on Linux; on non-Linux platforms it prints the equivalent manual command.
 - `g --write-config` / `galias --write-config`: Inserts missing defaults into repository `.galias.conf` and global `$HOME/.config/galias/config.json`.
 - `g --ver` / `g --version` / `galias --ver` / `galias --version`: Prints the CLI version and the latest versions available on PyPI and GitHub.
