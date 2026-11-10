@@ -845,9 +845,9 @@ regex and is treated as non-bullet text.
 - @details Parses the conventional header and renders one top-level bullet:
 `- <description> *(<scope>)*` when scope is present, `- <description>`
 otherwise (REQ-078). Cleaned description lines after the first are
-emitted as plain lines with no indentation transformation: non-bullet
-lines stay verbatim (REQ-232) while markdown bullet-marker runs are
-flattened into `'; '`-joined lines (REQ-234, REQ-235); entry blocks
+indented by two spaces to align with the bullet text (REQ-232); markdown
+bullet-marker runs are flattened into `'; '`-joined lines
+(REQ-234, REQ-235); entry blocks
 never carry blank separator lines because `generate_section_for_range`
 appends entries contiguously (REQ-233). When the breaking marker is
 present, the first description line is prefixed with `BREAKING CHANGE: `.
@@ -2392,7 +2392,7 @@ Exits with status 1 when `CHANGELOG.md` already exists and `--force-write` was n
 - @details Executes `print_all_help` using deterministic CLI control-flow and explicit error propagation.
 - @return Result emitted by `print_all_help` according to command contract.
 
-### fn `def main(argv=None, *, check_updates: bool = True)` (L6076-6168)
+### fn `def main(argv=None, *, check_updates: bool = True)` (L6076-6167)
 - @brief Execute `main` runtime logic for Git-Alias CLI.
 - @details Executes `main` using deterministic CLI control-flow and explicit error propagation.
 Management dispatch: `--ver`/`--version` prints the installed version
@@ -2710,7 +2710,7 @@ carries the uv forcing options when requested (REQ-236, REQ-237).
 |`COMMANDS`|var|pub|5924||
 |`print_command_help`|fn|pub|6013-6020|def print_command_help(name, width=None)|
 |`print_all_help`|fn|pub|6024-6058|def print_all_help()|
-|`main`|fn|pub|6076-6168|def main(argv=None, *, check_updates: bool = True)|
+|`main`|fn|pub|6076-6167|def main(argv=None, *, check_updates: bool = True)|
 
 
 ---
@@ -3077,7 +3077,7 @@ rendering stages, and writes normalized lines to the configured output stream.
 - @details Wraps `proc.stdout` iteration to keep generator creation local to `_process`.
 - @return {Iterator[str]} Iterator emitting raw log lines including trailing newlines.
 
-### fn `def run(extra_args: Optional[List[str]] = None) -> None` (L1467-1640)
+### fn `def run(extra_args: Optional[List[str]] = None) -> None` (L1467-1639)
 - @brief Execute the tree visualization command.
 - @details Parses command-line options, configures the visualization engine, and runs the main processing loop. Unrecognized options are passed through to git log.
 - @param extra_args {Optional[List[str]]} CLI arguments from the dispatcher.
@@ -3120,5 +3120,5 @@ rendering stages, and writes normalized lines to the configured output stream.
 |`_write_rendered_line`|fn|priv|1222-1225|def _write_rendered_line(|
 |`_process`|fn|priv|1284-1303|def _process(|
 |`_lines_iter`|fn|priv|1320-1324|def _lines_iter()|
-|`run`|fn|pub|1467-1640|def run(extra_args: Optional[List[str]] = None) -> None|
+|`run`|fn|pub|1467-1639|def run(extra_args: Optional[List[str]] = None) -> None|
 

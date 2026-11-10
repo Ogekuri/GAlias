@@ -331,7 +331,7 @@ class ChangelogCommandTest(unittest.TestCase):
     def test_categorize_commit_formats_multiline_description(self):
         section, line = core.categorize_commit("change(core)!: first line\nsecond line")
         self.assertEqual(section, "Changes")
-        self.assertEqual(line, "- BREAKING CHANGE: first line *(core)*\nsecond line")
+        self.assertEqual(line, "- BREAKING CHANGE: first line *(core)*\n  second line")
 
     def test_categorize_commit_formats_multiline_with_blank_line(self):
         section, line = core.categorize_commit("change(core): first line\n\nCo-authored-by: Copilot <x@y.z>")
@@ -343,14 +343,14 @@ class ChangelogCommandTest(unittest.TestCase):
             "change(core): first line\r\n\r\nCo-authored-by: Copilot <x@y.z>\r\nthird line"
         )
         self.assertEqual(section, "Changes")
-        self.assertEqual(line, "- first line *(core)*\nthird line")
+        self.assertEqual(line, "- first line *(core)*\n  third line")
 
     def test_categorize_commit_flattens_markdown_list_body_to_semicolon_list(self):
         section, line = core.categorize_commit(
             "change(changelog): headline\n\n- first detail\n- second detail"
         )
         self.assertEqual(section, "Changes")
-        self.assertEqual(line, "- headline *(changelog)*\nfirst detail; second detail")
+        self.assertEqual(line, "- headline *(changelog)*\n  first detail; second detail")
 
     def test_generate_section_keeps_commit_bullets_consecutive(self):
         with mock.patch.object(
@@ -364,7 +364,25 @@ class ChangelogCommandTest(unittest.TestCase):
             section = core.generate_section_for_range(Path("/tmp"), "v1.2.3", "2026-02-18", "v1.2.2..v1.2.3")
         self.assertIsNotNone(section)
         assert section is not None
-        self.assertIn("- first line *(core)*\nsecond line\n- third line *(core)*", section)
+        self.assertIn("- first line *(core)*\n  second line\n- third line *(core)*", section)
+
+    def test_generate_section_indents_all_continuations_before_next_commit(self):
+        with mock.patch.object(
+            core,
+            "git_log_subjects",
+            return_value=[
+                "fix(core): first\n# heading\n> quote\n- one\n- two\ntail",
+                "fix: second\nsecond detail",
+            ],
+        ):
+            section = core.generate_section_for_range(
+                Path("/tmp"), "v1.2.3", "2026-02-18", "v1.2.2..v1.2.3"
+            )
+        self.assertIn(
+            "- first *(core)*\n  # heading\n  > quote\n  one; two\n  tail"
+            "\n- second\n  second detail",
+            section,
+        )
 
     def test_git_log_subjects_reads_full_commit_messages(self):
         payload = "fix(core)!: first line\n\nsecond line" + core.RECORD

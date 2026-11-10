@@ -1942,9 +1942,9 @@ def _format_changelog_description(desc: str) -> List[str]:
 # @details Parses the conventional header and renders one top-level bullet:
 #          `- <description> *(<scope>)*` when scope is present, `- <description>`
 #          otherwise (REQ-078). Cleaned description lines after the first are
-#          emitted as plain lines with no indentation transformation: non-bullet
-#          lines stay verbatim (REQ-232) while markdown bullet-marker runs are
-#          flattened into `'; '`-joined lines (REQ-234, REQ-235); entry blocks
+#          indented by two spaces to align with the bullet text (REQ-232); markdown
+#          bullet-marker runs are flattened into `'; '`-joined lines
+#          (REQ-234, REQ-235); entry blocks
 #          never carry blank separator lines because `generate_section_for_range`
 #          appends entries contiguously (REQ-233). When the breaking marker is
 #          present, the first description line is prefixed with `BREAKING CHANGE: `.
@@ -1968,7 +1968,7 @@ def categorize_commit(subject: str) -> Tuple[Optional[str], str]:
     scope_text = f" *({scope})*" if scope else ""
     line = f"- {desc_lines[0]}{scope_text}"
     if len(desc_lines) > 1:
-        line = "\n".join([line, *desc_lines[1:]])
+        line = "\n".join([line, *(f"  {detail}" for detail in desc_lines[1:])])
     mapping = {
         "new": "Features",
         "implement": "Implementations",

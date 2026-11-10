@@ -16,13 +16,14 @@ tags: ["requirements", "srs", "galias"]
 ---
 
 # GAlias CLI Requirements
-**Version**: 1.44
+**Version**: 1.45
 **Author**: Francesco Rolando
 **Date**: 2026-11-10
 
 ## Revision History
 | Date | Version | Change Summary |
 |------|---------|----------------|
+| 2026-11-10 | 1.45 | Indented changelog continuation lines to align with the commit bullet text (REQ-232). |
 | 2026-11-10 | 1.44 | Aligned `--ver`/`--version` report output so the installed, PyPI, and GitHub version lines render 18-character left-justified labels followed by `: <version>` (REQ-202, REQ-230, REQ-241). |
 | 2026-11-09 | 1.43 | Added the `--upgrade` auxiliary `--force` flag forcing download and complete reinstallation through the uv forcing options `--force --reinstall --refresh` on both PyPI and GitHub sources while the unforced path runs the standard install (REQ-001, REQ-129, REQ-209, REQ-236..REQ-240). |
 | 2026-11-09 | 1.42 | Changed `changelog` multiline rendering: markdown bullet lists in description lines after the first are stripped and replaced with `'; '`-separated lines while non-bullet lines stay verbatim, keeping cleanup and assembly logic (REQ-232, REQ-234, REQ-235). |
@@ -229,7 +230,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-144**: MUST when `--force` is supplied without an association, `bd` execute `git branch -D <branch>` and `wtd` execute `git worktree remove --force <worktree>`.
 - **REQ-145**: MUST when `--force` is supplied with an association, `bd` and `wtd` delete the associated worktree with `git worktree remove --force <path>` before deleting the branch with `git branch -D <branch>`.
 - **REQ-078**: MUST changelog markdown MUST render one top-level bullet per commit as `- <description> *(<scope>)*`, where the ` *(<scope>)*` suffix is present only when the parsed scope is non-empty.
-- **REQ-232**: MUST changelog rendering preserve each cleaned non-bullet description line after the first verbatim as a plain line with no indentation transformation.
+- **REQ-232**: MUST indent every rendered changelog description line after the first with two spaces to align it with the top-level bullet text.
 - **REQ-233**: MUST changelog rendering MUST NOT insert blank separator lines between consecutive top-level commit bullets.
 - **REQ-234**: MUST changelog rendering strip a leading markdown bullet marker (`-`, `*`, `+`, `1.`, `1)`) from every cleaned description line after the first.
 - **REQ-235**: MUST changelog rendering collapse each maximal run of consecutive bullet-item description lines after the first into one line whose item texts are joined by `'; '`.
@@ -424,7 +425,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-192** evidence: `src/git_alias/core.py` `DEFAULT_CONFIG` key order plus `GLOBAL_CONFIG_KEYS` order driving `print_all_help` Configuration Parameters rendering.
 - **REQ-015** evidence: `src/git_alias/core.py` `_write_missing_config_values` normalizes only `GLOBAL_CONFIG_KEYS` entries, so out-of-scope global keys such as legacy `editor` are ignored and never persisted.
 - **REQ-207** evidence: `src/git_alias/core.py` `_load_config_rules` reads only `entry.get("pattern")` and `print_all_help` renders only the `pattern` field; entries lacking `pattern` are ignored or rendered empty.
-- **REQ-232** evidence: `src/git_alias/core.py` `_format_changelog_description` emits cleaned non-bullet description lines verbatim after the top-level bullet with no indentation transformation.
+- **REQ-232** evidence: `src/git_alias/core.py` `categorize_commit` prefixes each rendered continuation line with two spaces to align with the top-level bullet text.
 - **REQ-233** evidence: `src/git_alias/core.py` `generate_section_for_range` appends entry blocks contiguously under each section header and emits a single trailing blank line only after each section block.
 - **REQ-234** evidence: `src/git_alias/core.py` `_format_changelog_description` strips the leading markdown bullet marker (`-`, `*`, `+`, `1.`, `1)` plus whitespace) from every cleaned description line after the first.
 - **REQ-235** evidence: `src/git_alias/core.py` `_format_changelog_description` collapses each maximal run of consecutive bullet-item lines into one line whose item texts are joined by `'; '`.
