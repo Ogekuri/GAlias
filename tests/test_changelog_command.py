@@ -378,6 +378,8 @@ class ChangelogCommandTest(unittest.TestCase):
             section = core.generate_section_for_range(
                 Path("/tmp"), "v1.2.3", "2026-02-18", "v1.2.2..v1.2.3"
             )
+        self.assertIsNotNone(section)
+        assert section is not None
         self.assertIn(
             "- first *(core)*\n  # heading\n  > quote\n  one; two\n  tail"
             "\n- second\n  second detail",
