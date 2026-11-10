@@ -71,6 +71,11 @@ class AliasHelpTest(unittest.TestCase):
                 msg=f"{alias} help missing from global --help",
             )
 
+    ## @brief Verify configuration commands precede lifecycle commands in help.
+    # @details Level 2; captures CLI help and compares the explicit order.
+    # @param self {AliasHelpTest} Isolated test instance.
+    # @return {None} Management inventory matches the new command contract.
+    # @satisfies REQ-016, REQ-243
     def test_management_help_order(self):
         output = self.run_script(["--help"])
         lines = output.splitlines()
@@ -83,7 +88,8 @@ class AliasHelpTest(unittest.TestCase):
             entries.append(line.strip())
         flags = [line.split()[0] for line in entries if line.strip()]
         self.assertGreaterEqual(len(flags), 3)
-        self.assertEqual(flags[:3], ["--write-config", "--upgrade", "--uninstall"])
+        self.assertEqual(flags[:6], ["--print-raw", "--print", "--params", "--set", "--unset", "--get"])
+        self.assertEqual(flags[6:8], ["--upgrade", "--uninstall"])
         self.assertIn("--help", flags)
 
     def test_individual_help_matches_hlal(self):

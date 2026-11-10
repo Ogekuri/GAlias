@@ -139,14 +139,52 @@ This allows them to be run both as a Python package (installed as <b>g</b> or <b
   Requires Astral `uv` in `PATH`: the launcher resolves the repository root and delegates execution to `uv run --project <repo> python -m git_alias`.
 
 
-### Create Configuration Files (`.galias.conf` + `$HOME/.config/galias/config.json`)
+### Manage Configuration
+
+Configuration uses `$HOME/.config/galias/config.json` for `Global` and
+repository-root `.galias.conf` for `Local` (current directory outside Git).
+Files are created only by explicit mutations. These commands replace the former
+normalization command; no migration is performed.
 
 ```bash
-g --write-config
+g --params
+g --print
+g --print-raw
+g --print-raw Global
+g --set Global:edit_command 'vim -f'
+g --set Global:edit_command "$EDITOR"
+g --set Local:work topic
+g --get Local
+g --get Local:ver_rules:0:pattern
+g --set Local:ver_rules '[{"pattern":"VERSION","regex":"(\\\\d+\\\\.\\\\d+\\\\.\\\\d+)"}]'
+g --unset Local:work
+g --unset Local:ver_rules:0
+g --unset Local
+g --set --help
 ```
 
+Paths are case-sensitive, use `:` separators, and support zero-based array
+indices. `--set PATH VALUE` accepts strings as one argument and objects or
+arrays as one shell-quoted JSON argument; regex backslashes must be doubled in
+JSON. The shell expands environment variables before invocation; GAlias stores
+the received string without executing it. Replace an entire array to add entries.
 
-### Edit Configuration Files
+`--get` returns JSON and resolves absent top-level keys from defaults.
+`--unset` removes persisted keys, restores their defaults, removes array
+entries, or clears a scope. Required version-rule fields cannot be removed;
+exclusion rules may omit `regex`. Invalid input fails before writing. Each
+mutation atomically replaces only the selected file. Read commands never create
+configuration files.
+
+`--print` shows effective values as a tree: scalar options print as plain
+unquoted text and complex values render as box-drawing tables. `--params`
+documents every path with its input type, a short description, allowed-value
+tables when constrained, and one input example. `--print-raw [Global|Local]`
+emits exact stored bytes; without a selector it concatenates global then local
+bytes. File labels and missing-file notices go to stderr; stdout carries no
+added separators.
+
+### Configuration Fields
 
 - Customize repository-local `.galias.conf` with `master`, `develop`, `work`, `default_commit_module`, and `ver_rules`.
 - Each `ver_rules` entry pairs a `pattern` (file selector) with a `regex` (version extractor).
@@ -171,8 +209,9 @@ Pattern examples (`ver_rules.pattern`, gitignore syntax):
 
 The default `ver_rules` select `README.md`, `src/**/*.py`, and `pyproject.toml`.
 
-- Customize global `$HOME/.config/galias/config.json` with `edit_command`, `gp_command`, and `gr_command`.
-- Running `g --write-config` normalizes both files to these key sets; out-of-scope keys (for example the legacy global `editor`) are ignored and never persisted.
+- Global settings contain terminal/graphical pairs for `edit_command`, `diff_command`, `gr_command`, and `gp_command`; graphical variants end in `_gfx`.
+- Configuration mutations persist canonical keys only; unrelated file keys are ignored.
+- Every configuration change must update CLI access, validation, help, discovery, rendering, and tests (DES-010).
 
 
 ### Work-in-Progress Commits
@@ -208,7 +247,8 @@ Upgrade or uninstall the GAlias CLI:
 
 - `g --upgrade` / `galias --upgrade`: Reinstalls the tool from PyPI on Linux; `g --upgrade --develop` (or the equivalent `--dev`) reinstalls the newest tagged release from GitHub; on non-Linux platforms it prints the equivalent manual command. Add `--force` to force the download and a complete reinstallation through the uv options `--force --reinstall --refresh`. The same `--dev`/`--develop` flags have a different meaning on `major`/`minor`/`patch`, where they limit the release to the configured `develop` branch.
 - `g --uninstall` / `galias --uninstall`: Uninstalls the tool on Linux; on non-Linux platforms it prints the equivalent manual command.
-- `g --write-config` / `galias --write-config`: Inserts missing defaults into repository `.galias.conf` and global `$HOME/.config/galias/config.json`.
+- `--set PATH VALUE`, `--unset PATH`, `--get PATH`: Manage a field or scope through colon-separated paths.
+- `--print`, `--print-raw [Global|Local]`, `--params`: Display effective values, exact file bytes, or typed parameter documentation.
 - `g --ver` / `g --version` / `galias --ver` / `galias --version`: Prints the CLI version and the latest versions available on PyPI and GitHub.
 - `g --help` / `galias --help`: Prints management commands, configuration parameters, and the alias list; use `g --help <command>` for a single command.
 

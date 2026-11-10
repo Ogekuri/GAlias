@@ -21,11 +21,13 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from git_alias import configuration
+
 pathspec = importlib.import_module("pathspec")
 
 ## @brief Repository-local configuration filename resolved from repository root.
 ## @details Value `.galias.conf` per DES-006/REQ-014; loaded by `load_cli_config`
-##          and normalized by `write_default_config` for the five DES-006 local
+##          and managed by `configuration.execute` for the five DES-006 local
 ##          keys (`master`, `develop`, `work`, `default_commit_module`, `ver_rules`).
 ##          No `.g.conf` fallback exists: backward compatibility is not implemented.
 ## @satisfies DES-006, DES-009, REQ-014, REQ-017
@@ -164,12 +166,12 @@ ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
 # @details Default terminal commit-graph launcher for the `gp` command pair
 #          (REQ-186); imposed default value `gitui` per REQ-191.
 # @satisfies REQ-191
-DEFAULT_GP_COMMAND = "gitui"
+DEFAULT_GP_COMMAND = configuration.SCHEMA["Global"].fields["gp_command"].default
 ## @brief Constant `DEFAULT_GR_COMMAND` used by CLI runtime paths and policies.
 # @details Default terminal tag/decoration-graph launcher for the `gr`
 #          command pair (REQ-186); imposed default value `tig` per REQ-191.
 # @satisfies REQ-191
-DEFAULT_GR_COMMAND = "tig"
+DEFAULT_GR_COMMAND = configuration.SCHEMA["Global"].fields["gr_command"].default
 ## @brief Constant `GIT_DIFFTOOL_COMMAND` used by CLI runtime paths and policies.
 # @details Base argv executed by visual diff aliases (REQ-189); the
 #          environment-selected diff tool is injected as `--extcmd` override
@@ -177,36 +179,10 @@ DEFAULT_GR_COMMAND = "tig"
 GIT_DIFFTOOL_COMMAND = ("git", "difftool", "-d")
 
 ## @brief Constant `DEFAULT_CONFIG` used by CLI runtime paths and policies.
-# @details Canonical default configuration. The eight REQ-186 global command
-#          keys hold the imposed REQ-191 default values and are declared
-#          contiguously in the REQ-192 canonical order
-#          (`edit_command`, `edit_command_gfx`, `diff_command`,
-#          `diff_command_gfx`, `gr_command`, `gr_command_gfx`, `gp_command`,
-#          `gp_command_gfx`) because `print_all_help` renders Configuration
-#          Parameters in dict insertion order.
-# @satisfies REQ-191, REQ-192
-DEFAULT_CONFIG = {
-    "master": "master",
-    "develop": "develop",
-    "work": "work",
-    "edit_command": "edit",
-    "edit_command_gfx": "sublime_text",
-    "diff_command": "icdiff",
-    "diff_command_gfx": "meld",
-    "gr_command": DEFAULT_GR_COMMAND,
-    "gr_command_gfx": "gitg",
-    "gp_command": DEFAULT_GP_COMMAND,
-    "gp_command_gfx": "sublime_merge --multiinstance .",
-    "default_commit_module": "",
-    "ver_rules": [
-        {"pattern": "README.md", "regex": r"\s*\((\d+\.\d+\.\d+)\)\n"},
-        {
-            "pattern": "src/**/*.py",
-            "regex": r'__version__\s*=\s*["\']?(\d+\.\d+\.\d+)["\']?',
-        },
-        {"pattern": "pyproject.toml", "regex": r'\bversion\s*=\s*"(\d+\.\d+\.\d+)"'},
-    ],
-}
+# @details O(N) deep copies from the shared schema; flat consumer interface
+# preserves existing alias algorithms and imposed command defaults.
+# @satisfies REQ-191, REQ-192, REQ-242, REQ-253
+DEFAULT_CONFIG = configuration.defaults("Global") | configuration.defaults("Local")
 
 ## @brief Constant `CONFIG` used by CLI runtime paths and policies.
 
@@ -215,31 +191,14 @@ CONFIG = DEFAULT_CONFIG.copy()
 
 BRANCH_KEYS = ("master", "develop", "work")
 ## @brief Constant `LOCAL_CONFIG_KEYS` used by CLI runtime paths and policies.
-LOCAL_CONFIG_KEYS = ("master", "develop", "work", "default_commit_module", "ver_rules")
+LOCAL_CONFIG_KEYS = tuple(configuration.SCHEMA["Local"].fields)
 ## @brief Constant `GLOBAL_CONFIG_KEYS` used by CLI runtime paths and policies.
-# @details Ordered inventory of the eight REQ-186 global command keys in the
-#          REQ-192 canonical order; drives global config loading,
-#          `--write-config` normalization (REQ-014), and persisted JSON key
-#          insertion order. Out-of-scope keys are ignored and never persisted
-#          (REQ-015); no legacy-key migration exists.
-# @satisfies REQ-014, REQ-015, REQ-192
-GLOBAL_CONFIG_KEYS = (
-    "edit_command",
-    "edit_command_gfx",
-    "diff_command",
-    "diff_command_gfx",
-    "gr_command",
-    "gr_command_gfx",
-    "gp_command",
-    "gp_command_gfx",
-)
+# @details Ordered key inventory derived from the canonical shared schema.
+# @satisfies REQ-186, REQ-192, REQ-242
+GLOBAL_CONFIG_KEYS = tuple(configuration.SCHEMA["Global"].fields)
 ## @brief Constant `MANAGEMENT_HELP` used by CLI runtime paths and policies.
 
-MANAGEMENT_HELP = [
-    (
-        "--write-config",
-        "Insert missing defaults into repository .galias.conf and global $HOME/.config/galias/config.json.",
-    ),
+MANAGEMENT_HELP = list(configuration.COMMAND_HELP.items()) + [
     ("--upgrade", "Reinstall galias on Linux; print manual command elsewhere. Combine with --develop or --dev to install the newest tagged release from GitHub. Add --force to force the download and a complete reinstallation. Note: --dev/--develop mean something different on major/minor/patch, where they limit the release to the configured develop branch."),
     ("--uninstall", "Uninstall galias on Linux; print manual command elsewhere."),
     ("--ver", "Print the CLI version with the latest PyPI and GitHub release versions."),
@@ -274,9 +233,9 @@ def get_editor():
 
 
 ## @brief Load rule pairs from the active configuration for a rule-bearing config key.
-# @details Accepts dict entries `{"pattern", "regex"}` and `(pattern, regex)` sequence
-#          entries, strips both fields, and drops invalid entries. Negation patterns starting
-#          with `!` are accepted without a `regex` field and stored with `None` regex.
+# @details O(N) object traversal; strips fields and drops invalid entries.
+# Negation patterns accept absent regex. Internal fallback pairs remain
+# unchanged; configured sequence entries are ignored. Only diagnostics use I/O.
 # @param key {str} Configuration key to read from `CONFIG`.
 # @param fallback {List[Tuple[str, str]]} Default rule list used when no valid entry remains.
 # @return {List[Tuple[str, Optional[str]]]} Parsed `(pattern, regex)` rule pairs; negation entries carry `None` regex.
@@ -292,8 +251,6 @@ def _load_config_rules(key, fallback):
         if isinstance(entry, dict):
             pattern = entry.get("pattern")
             regex = entry.get("regex")
-        elif isinstance(entry, (list, tuple)) and len(entry) >= 2:
-            pattern, regex = entry[0], entry[1]
         if isinstance(pattern, str):
             pattern = pattern.strip()
         else:
@@ -831,7 +788,7 @@ def _read_config_object(config_path):
         return {}
     try:
         raw_text = config_path.read_text(encoding="utf-8")
-    except OSError as exc:
+    except (OSError, UnicodeError) as exc:
         print(f"Unable to read {config_path}: {exc}", file=sys.stderr)
         return None
     try:
@@ -845,32 +802,26 @@ def _read_config_object(config_path):
     return data
 
 
-## @brief Execute `_apply_config_values` runtime logic for Git-Alias CLI.
-# @details Executes `_apply_config_values` using deterministic CLI control-flow and explicit error propagation.
-# @param data Input parameter consumed by `_apply_config_values`.
-# @param keys Input parameter consumed by `_apply_config_values`.
-# @return Result emitted by `_apply_config_values` according to command contract.
+## @brief Apply schema-validated values to the flat alias configuration.
+# @details O(N) validation; invalid values leave defaults active and emit
+# diagnostics. Version-rule entry filtering remains in _load_config_rules.
+# @param data {dict[str, Any]} Decoded configuration object.
+# @param keys {tuple[str, ...]} Allowed scope key inventory.
+# @return {None} Mutates CONFIG; never writes files.
+# @satisfies DES-006, REQ-097, REQ-188, REQ-190, REQ-242
 def _apply_config_values(data, keys):
+    fields = configuration.SCHEMA["Global"].fields | configuration.SCHEMA["Local"].fields
     for key in keys:
         if key not in data:
             continue
         value = data[key]
-        if key == "ver_rules":
-            if isinstance(value, list):
-                CONFIG[key] = value
-            else:
-                print(f"Ignoring {key}: expected a JSON array.", file=sys.stderr)
-            continue
-        if key == "default_commit_module":
-            if isinstance(value, str):
-                CONFIG[key] = value.strip()
-            else:
-                print(f"Ignoring {key}: expected a string.", file=sys.stderr)
-            continue
-        if isinstance(value, str) and value.strip():
+        if key == "ver_rules" and isinstance(value, list):
             CONFIG[key] = value
-        else:
-            print(f"Ignoring {key}: expected a non-empty string.", file=sys.stderr)
+            continue
+        try:
+            CONFIG[key] = configuration.validate(value, fields[key], key)
+        except ValueError as exc:
+            print(f"Ignoring {key}: {exc}", file=sys.stderr)
 
 
 ## @brief Execute `load_cli_config` runtime logic for Git-Alias CLI.
@@ -889,87 +840,6 @@ def load_cli_config(root=None, home=None):
     if local_data is not None:
         _apply_config_values(local_data, LOCAL_CONFIG_KEYS)
     return config_path
-
-
-## @brief Normalize one configuration file to its canonical key set without migrating legacy keys.
-# @details Reads the existing JSON object (when present), rebuilds it containing
-#          only `keys`, fills missing or invalid entries with `DEFAULT_CONFIG`
-#          values, and writes the result only when normalization changes the
-#          persisted content. Out-of-scope keys (for example the legacy global
-#          `editor` key) are ignored and are never read, migrated, or preserved
-#          in the output object. Runtime loading never calls this function; it
-#          runs only from `write_default_config` (`--write-config`).
-# @param config_path {Path} Target configuration file path.
-# @param keys {Tuple[str, ...]} Canonical key sequence defining the output key set and order.
-# @param create_parent {bool} When True, create the parent directory before writing.
-# @return {Path} The input `config_path` after optional normalization.
-# @satisfies REQ-014, REQ-015, DES-006, REQ-097
-def _write_missing_config_values(config_path, keys, create_parent=False):
-    data = _read_config_object(config_path)
-    if data is None:
-        return config_path
-    if create_parent:
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-    should_write = False
-    normalized = {}
-    for key in keys:
-        value = data.get(key)
-        if key == "ver_rules":
-            if isinstance(value, list):
-                normalized[key] = value
-            else:
-                normalized[key] = DEFAULT_CONFIG[key]
-                if key in data:
-                    print(f"Ignoring {key}: expected a JSON array.", file=sys.stderr)
-                    should_write = True
-            continue
-        if key == "default_commit_module":
-            if isinstance(value, str):
-                normalized_value = value.strip()
-                normalized[key] = normalized_value
-                if value != normalized_value:
-                    should_write = True
-            else:
-                normalized[key] = DEFAULT_CONFIG[key]
-                if key in data:
-                    print(f"Ignoring {key}: expected a string.", file=sys.stderr)
-                should_write = True
-            continue
-        if isinstance(value, str) and value.strip():
-            normalized[key] = value
-        else:
-            normalized[key] = DEFAULT_CONFIG[key]
-            if key in data:
-                print(f"Ignoring {key}: expected a non-empty string.", file=sys.stderr)
-            should_write = True
-    if set(data.keys()) != set(keys):
-        should_write = True
-    data = normalized
-    if should_write:
-        try:
-            config_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-        except OSError as exc:
-            print(f"Unable to update {config_path}: {exc}", file=sys.stderr)
-    return config_path
-
-
-## @brief Execute `write_default_config` runtime logic for Git-Alias CLI.
-# @details Executes `write_default_config` using deterministic CLI control-flow and explicit error propagation.
-# @param root Input parameter consumed by `write_default_config`.
-# @param home Input parameter consumed by `write_default_config`.
-# @return Result emitted by `write_default_config` according to command contract.
-def write_default_config(root=None, home=None):
-    local_config_path = _write_missing_config_values(
-        get_config_path(root), LOCAL_CONFIG_KEYS
-    )
-    global_config_path = _write_missing_config_values(
-        get_global_config_path(home),
-        GLOBAL_CONFIG_KEYS,
-        create_parent=True,
-    )
-    print(f"Configuration updated at {local_config_path}")
-    print(f"Configuration updated at {global_config_path}")
-    return local_config_path
 
 
 ## @brief Parse one configured launcher command line into argv tokens.
@@ -6018,9 +5888,11 @@ def print_command_help(name, width=None):
         print(f"{name.ljust(width)} - {description}")
 
 
-## @brief Execute `print_all_help` runtime logic for Git-Alias CLI.
-# @details Executes `print_all_help` using deterministic CLI control-flow and explicit error propagation.
-# @return Result emitted by `print_all_help` according to command contract.
+## @brief Render management help, schema-derived values, and sorted aliases.
+# @details O(N) output; retains section order and delegates configuration trees
+# to the shared renderer. Reads CONFIG without changing files or state.
+# @return {None} Writes English help to stdout.
+# @satisfies DES-009, REQ-016, REQ-192, REQ-243, REQ-250
 def print_all_help():
     print(f"Usage: g <command> [options] ({get_cli_version()})")
     print()
@@ -6029,25 +5901,11 @@ def print_all_help():
         print(f"  {flag} - {description}")
     print()
     print("Configuration Parameters:")
-    for key in DEFAULT_CONFIG:
-        value = CONFIG.get(key, DEFAULT_CONFIG[key])
-        if key == "ver_rules":
-            print("  ver_rules:")
-            if isinstance(value, list):
-                entries = value
-            else:
-                entries = []
-            for entry in entries:
-                pattern = ""
-                regex = ""
-                if isinstance(entry, dict):
-                    pattern = entry.get("pattern") or ""
-                    regex = entry.get("regex") or ""
-                elif isinstance(entry, (list, tuple)) and len(entry) >= 2:
-                    pattern, regex = entry[0], entry[1]
-                print(f"    - pattern={pattern} regex={regex}")
-        else:
-            print(f"  {key} = {value}")
+    values = {
+        scope: {key: CONFIG.get(key, spec.default) for key, spec in schema.fields.items()}
+        for scope, schema in configuration.SCHEMA.items()
+    }
+    print(configuration.render_tree(values))
     print()
     print("Commands:")
     help_width = max(len(name) for name in HELP_TEXTS)
@@ -6069,15 +5927,23 @@ def print_all_help():
 #          (REQ-203); rejects a first-token `--force` outside `--upgrade`
 #          (REQ-238) and forwards the `--force` selector so the install argv
 #          carries the uv forcing options when requested (REQ-236, REQ-237).
-# @param argv Input parameter consumed by `main`.
-# @param check_updates Input parameter consumed by `main`.
-# @return Result emitted by `main` according to command contract.
-# @satisfies REQ-001, REQ-030, REQ-201, REQ-202, REQ-203, REQ-230, REQ-238, REQ-241
+#          Configuration commands route before alias flag validation so values
+#          remain opaque arguments. O(N) dispatch plus delegated I/O; no migration.
+# @param argv {list[str] | None} Explicit argv or process arguments.
+# @param check_updates {bool} Enable ordinary startup checks.
+# @return {None} Delegated output or command completion.
+# @throws SystemExit Invalid operands, configuration failure, or command failure.
+# @satisfies REQ-001, REQ-030, REQ-201, REQ-202, REQ-203, REQ-230, REQ-238, REQ-241, REQ-243, REQ-248, REQ-253, REQ-255
 def main(argv=None, *, check_updates: bool = True):
     args = list(argv) if argv is not None else sys.argv[1:]
     force_online_update_check = bool(args) and args[0] in ("--ver", "--version")
     git_root = get_git_root()
-    load_cli_config(git_root)
+    config_args = args
+    if len(args) == 2 and args[0] == "--help" and args[1] in configuration.COMMAND_HELP:
+        config_args = [args[1], "--help"]
+    is_config_command = bool(config_args) and config_args[0] in configuration.COMMAND_HELP
+    if not is_config_command:
+        load_cli_config(git_root)
     pypi_latest_version: Optional[str] = None
     if check_updates or force_online_update_check:
         pypi_latest_version = check_for_newer_version(
@@ -6085,6 +5951,16 @@ def main(argv=None, *, check_updates: bool = True):
             timeout_seconds=VERSION_CHECK_TIMEOUT_SECONDS,
             ignore_idle_cache=force_online_update_check,
         )
+    if is_config_command:
+        try:
+            configuration.execute(config_args, {
+                "Global": get_global_config_path(),
+                "Local": get_config_path(git_root),
+            })
+        except (ValueError, OSError) as exc:
+            print(f"Configuration error: {exc}", file=sys.stderr)
+            sys.exit(1)
+        return
     if not args:
         print("Please provide a command or --help", file=sys.stderr)
         print_all_help()
@@ -6122,9 +5998,6 @@ def main(argv=None, *, check_updates: bool = True):
         else:
             github_report_value = f"unknown ({github_failure_reason or 'unavailable'})"
             print(_format_version_report_line("Latest @ GitHub", github_report_value))
-        return
-    if args[0] == "--write-config":
-        write_default_config(git_root)
         return
     if args[0] == "--upgrade":
         upgrade_self(

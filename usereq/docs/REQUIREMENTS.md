@@ -16,13 +16,14 @@ tags: ["requirements", "srs", "galias"]
 ---
 
 # GAlias CLI Requirements
-**Version**: 1.45
+**Version**: 1.46
 **Author**: Francesco Rolando
 **Date**: 2026-11-10
 
 ## Revision History
 | Date | Version | Change Summary |
 |------|---------|----------------|
+| 2026-11-10 | 1.46 | Replaced configuration normalization with schema-driven hierarchical CLI management, raw/tree output, typed parameter discovery with input examples, and mandatory CLI synchronization (DES-010, REQ-014, REQ-015, REQ-097, REQ-207, REQ-242..REQ-255). |
 | 2026-11-10 | 1.45 | Indented changelog continuation lines to align with the commit bullet text (REQ-232). |
 | 2026-11-10 | 1.44 | Aligned `--ver`/`--version` report output so the installed, PyPI, and GitHub version lines render 18-character left-justified labels followed by `: <version>` (REQ-202, REQ-230, REQ-241). |
 | 2026-11-09 | 1.43 | Added the `--upgrade` auxiliary `--force` flag forcing download and complete reinstallation through the uv forcing options `--force --reinstall --refresh` on both PyPI and GitHub sources while the unforced path runs the standard install (REQ-001, REQ-129, REQ-209, REQ-236..REQ-240). |
@@ -119,6 +120,8 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **DES-008**: MUST print all console messages in English.
 - **DES-009**: MUST the global `--help` output MUST be ordered as usage, Management Commands, Configuration Parameters, and Commands, and Configuration Parameters MUST print resolved values from `.galias.conf` plus `$HOME/.config/galias/config.json`, otherwise defaults from `DEFAULT_CONFIG`.
 
+- **DES-010**: MUST update configuration CLI access, validation, help, parameter discovery, rendering, and tests whenever any configuration field, type, default, scope, structure, or allowed value changes.
+
 ### 3.2 Functional Requirements
 - **REQ-001**: MUST execute `uv tool install galias` with no forcing options, installing the latest PyPI release, when `--upgrade` without `--develop`, `--dev`, or `--force` is invoked on Linux.
 - **REQ-002**: MUST when `--uninstall` is invoked on Linux, delete `~/.cache/galias/check_version_idle-time.json`, remove `~/.cache/galias`, and execute `uv tool uninstall galias`.
@@ -135,8 +138,8 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-011**: MUST provide reset/cleanup aliases (`rs`, `rssft`, `rsmix`, `rshrd`, `rsmrg`, `rskep`, `unstg`, `rmloc`, `rmstg`, `rmunt`) and MUST print dedicated reset help when `rs*` commands receive `--help`.
 - **REQ-012**: MUST tagging and archive aliases MUST support annotated tag creation (`tg`), local/remote tag deletion (`rmtg`), tag listing (`lt`), and archiving configured `master` in tar.gz (`ar`).
 - **REQ-013**: MUST open file paths through `ed` using `edit_command` from `$HOME/.config/galias/config.json` (default `edit`) and MUST fail with explicit error when no path is supplied.
-- **REQ-014**: MUST normalize `.galias.conf` to keys `master`, `develop`, `work`, `default_commit_module`, `ver_rules` and normalize `$HOME/.config/galias/config.json` to the eight REQ-186 global command keys when `--write-config` runs.
-- **REQ-015**: MUST NOT read, migrate, or preserve the legacy global key `editor`; `--write-config` MUST persist only the eight REQ-186 global keys per REQ-014 and MUST ignore out-of-scope keys.
+- **REQ-014**: MUST persist the selected configuration scope as JSON through `--set` and `--unset`, replacing `--write-config`.
+- **REQ-015**: MUST persist only DES-006 canonical keys in the selected scope during configuration mutations.
 - **REQ-016**: MUST show management commands before alias listings when global help is requested or when command input is missing.
 - **REQ-017**: MUST evaluate `ver_rules` from `.galias.conf` (or defaults), build repository candidates from `git ls-files`, apply pathspec matching plus hardcoded cache/temp exclusions, and fail on mismatched or missing version matches as specified.
 - **REQ-118**: MUST abort `ver` and `chver` when a `ver_rules.pattern` matches zero repository files, and MUST report the offending pattern with guidance that only repository files can be configured in `ver_rules.pattern`.
@@ -258,7 +261,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-094**: MUST the `o` alias MUST execute `git worktree list --verbose` in section 3, MUST execute `git status -sb` only when `WorkingTree` state is not `clean`, and in section 6 MUST normalize the status header line from `## <branch>` to `## <Logical>(⎇ <branch>)` using the same color formatting as section-1 `Current Branch`, and MUST render each non-header status line two-character status prefix in bright red (`\033[31;1m`).
 - **REQ-095**: MUST the section-4 `WorkingTree` node MUST display `WorkingTree [<state>]` where `<state>` is the working-tree state string (`clean`, `unstaged`, `staged`, or `mixed`) derived from the same diagnostic function used by `cmd_o`.
 - **REQ-096**: MUST the `o` alias MUST print section `=== 5. BRANCHES ===` with configured aligned rows for `Work`, `Develop`, `Master`, `RemoteDevelop`, `RemoteMaster`, formatted `<Identifier> | <latest commit subject>`; commit subject text MUST be uncolored and MUST strip ANSI escape sequences before rendering.
-- **REQ-097**: MUST runtime configuration loading MUST NOT append, persist, or mutate configuration files; file normalization and key insertion MUST occur only when `--write-config` is explicitly executed.
+- **REQ-097**: MUST restrict configuration-file mutations to explicit `--set` or `--unset` invocations.
 - **REQ-098**: MUST the CLI MUST expose an `l` alias in `COMMANDS` and `HELP_TEXTS`, and `--help` outputs MUST include `l` in global and per-command help paths.
 - **REQ-099**: MUST the `l` alias MUST render a text-based tree visualization of git commit history by invoking `git log --date-order` with a custom pretty format and processing the output through a vine-based graph algorithm.
 - **REQ-100**: MUST each `l` output line display columns in fixed order (hash, date `%Y-%m-%d %H:%M`, graph, author, refs, subject), and MUST truncate rendered line length to current terminal width resolved via `shutil.get_terminal_size`.
@@ -284,7 +287,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-211**: MUST execute all `release-pypi.yml` automation on the GitHub Actions Node24 runner generation or newer, preserving every existing release step, trigger, gate, and publication behavior.
 - **REQ-212**: MUST NOT set `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` or `ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION` in any repository workflow file.
 - **REQ-213**: MUST reference Node24-based action majors `actions/checkout@v5`, `actions/setup-python@v6`, `astral-sh/setup-uv@v6`, and `actions/attest-build-provenance@v3` in `release-pypi.yml`.
-- **REQ-207**: MUST resolve each `ver_rules` entry pattern solely from its `pattern` field (dict) or first pair element (sequence); entries without a `pattern` value MUST be ignored.
+- **REQ-207**: MUST resolve configured `ver_rules` entries from JSON objects containing `pattern` and `regex`, with `regex` optional for negation patterns; entries without a `pattern` value MUST be ignored.
 - **REQ-196**: MUST declare PyPI-compliant `[project]` metadata in `pyproject.toml`: `name = "galias"`, `description`, `readme`, `requires-python`, `keywords`, `classifiers`, and project URLs.
 - **REQ-197**: MUST declare the `pyproject.toml` project license as the PEP 639 SPDX expression `GPL-3.0-only` with explicit `license-files` including `LICENSE`.
 - **REQ-198**: MUST document `uv tool install galias` as the primary `README.md` install method (Astral uv, PyPI source) with a dedicated uvx alternative-usage section and a dedicated non-primary GitHub install section covering `--upgrade --develop`.
@@ -339,6 +342,22 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-229**: MUST gate `build-release` on successful completion of `test-release` via `needs` so failed tests skip build, attestation, GitHub Release, and PyPI publication.
 - **REQ-224**: MUST print one `--- [pre-release-check] <message> ---` English progress line per step plus a final success line.
 - **REQ-225**: MUST abort at the first failing step with non-zero exit status and skip all subsequent steps.
+
+### 3.2.1 Configuration Command Interface
+- **REQ-242**: MUST derive configurable paths, types, descriptions, defaults, allowed values, and input examples from one shared schema covering every DES-006 key.
+- **REQ-243**: MUST expose `--print-raw`, `--print`, `--params`, `--set`, `--unset`, and `--get` as standalone management commands with exact operand validation and command-specific `--help`.
+- **REQ-244**: MUST address configuration using case-sensitive colon-separated paths rooted at `Global` or `Local`, with zero-based array indices and nested object field names.
+- **REQ-245**: MUST implement `--set PATH VALUE` for schema-valid scalar, object, and array values, accepting complex values as one shell-quoted JSON argument.
+- **REQ-246**: MUST implement `--get PATH` by printing the selected effective scalar, array, object, or scope as JSON, resolving absent top-level keys from existing defaults.
+- **REQ-247**: MUST implement `--unset PATH` by removing persisted keys, scope contents, array entries, or optional object fields, restoring existing defaults for absent top-level keys.
+- **REQ-248**: MUST reject invalid paths, wrong value types, malformed JSON, invalid rule structures, and unreadable configuration with English diagnostics and non-zero status before mutation.
+- **REQ-249**: MUST implement `--print-raw [Global|Local]` by emitting existing selected files byte-for-byte, global then local, with file identification and missing-file diagnostics exclusively on stderr.
+- **REQ-250**: MUST implement `--print` as an effective-configuration tree grouped by scope, rendering scalar values as plain unquoted text and complex values as box-drawing tables.
+- **REQ-251**: MUST implement `--params` as a schema-derived hierarchy where each field line labels its input type, short description, and one input example, with allowed-value tables when choices are defined.
+- **REQ-252**: MUST document colon paths, zero-based indices, scope selection, unset/default semantics, shell-expanded environment values, and shell-quoted JSON input with application-specific examples in configuration command help.
+- **REQ-253**: MUST preserve the unselected configuration file and existing alias algorithms during configuration management, including the independent repository-synchronization alias `get`.
+- **REQ-254**: MUST atomically replace the selected configuration file after successful validation, creating its parent directory only for explicit mutations.
+- **REQ-255**: MUST permit global configuration commands outside repositories and resolve local configuration through the existing repository-root-or-current-directory policy.
 
 ### 3.3 Project File Structure
 ```
@@ -423,8 +442,8 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-190** evidence: `src/git_alias/core.py` `_run_configured_diff` empty-tool branch executing plain `git difftool -d`.
 - **REQ-191** evidence: `src/git_alias/core.py` `DEFAULT_CONFIG` plus `DEFAULT_GP_COMMAND`/`DEFAULT_GR_COMMAND` constants defining the imposed default command values.
 - **REQ-192** evidence: `src/git_alias/core.py` `DEFAULT_CONFIG` key order plus `GLOBAL_CONFIG_KEYS` order driving `print_all_help` Configuration Parameters rendering.
-- **REQ-015** evidence: `src/git_alias/core.py` `_write_missing_config_values` normalizes only `GLOBAL_CONFIG_KEYS` entries, so out-of-scope global keys such as legacy `editor` are ignored and never persisted.
-- **REQ-207** evidence: `src/git_alias/core.py` `_load_config_rules` reads only `entry.get("pattern")` and `print_all_help` renders only the `pattern` field; entries lacking `pattern` are ignored or rendered empty.
+- **REQ-015** evidence target: schema-scoped persistence invoked by configuration `--set` and `--unset`.
+- **REQ-207** evidence target: `_load_config_rules` resolves only object `pattern` and `regex` fields; configuration validation checks canonical rule structures.
 - **REQ-232** evidence: `src/git_alias/core.py` `categorize_commit` prefixes each rendered continuation line with two spaces to align with the top-level bullet text.
 - **REQ-233** evidence: `src/git_alias/core.py` `generate_section_for_range` appends entry blocks contiguously under each section header and emits a single trailing blank line only after each section block.
 - **REQ-234** evidence: `src/git_alias/core.py` `_format_changelog_description` strips the leading markdown bullet marker (`-`, `*`, `+`, `1.`, `1)` plus whitespace) from every cleaned description line after the first.
