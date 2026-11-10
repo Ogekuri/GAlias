@@ -1,7 +1,16 @@
 # Changelog
 
-## [0.51.1](https://github.com/Ogekuri/GAlias/compare/v0.51.0..v0.51.1) - 2026-11-09
+## [0.51.2](https://github.com/Ogekuri/GAlias/compare/v0.51.0..v0.51.2) - 2026-11-10
 ### 🚜  Changes
+- align --ver/--version output to REQ-241 label format [useReq] *(version-report)*
+REQUIREMENTS.md v1.44: add REQ-241 aligned 18-character label-field
+format; update REQ-202 and REQ-230 to render the three-line report
+through it.
+core.py: add VERSION_REPORT_LABEL_WIDTH and _format_version_report_line;
+main --ver/--version branch prints aligned 'Current Installed',
+'Latest @ PyPI', and 'Latest @ GitHub' lines including the
+'unknown (<reason>)' GitHub degradation.
+tests: update --ver/--version output expectations in test_alias_help.py.; WORKFLOW.md/REFERENCES.md: trace _format_version_report_line in PROC:main.
 - add --force to --upgrade for forced uv reinstall [useReq] *(upgrade)*
 Add the auxiliary --force flag to --upgrade, combinable with --develop/--dev:
 forced path appends the uv forcing options --force --reinstall --refresh
@@ -907,7 +916,7 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 - \[0.49.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.49.0
 - \[0.50.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.50.0
 - \[0.51.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.51.0
-- \[0.51.1\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.51.1
+- \[0.51.2\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.51.2
 
 [0.1.0]: https://github.com/Ogekuri/GAlias/releases/tag/v0.1.0
 [0.2.0]: https://github.com/Ogekuri/GAlias/compare/v0.1.0..v0.2.0
@@ -960,4 +969,4 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 [0.49.0]: https://github.com/Ogekuri/GAlias/compare/v0.48.0..v0.49.0
 [0.50.0]: https://github.com/Ogekuri/GAlias/compare/v0.49.0..v0.50.0
 [0.51.0]: https://github.com/Ogekuri/GAlias/compare/v0.50.0..v0.51.0
-[0.51.1]: https://github.com/Ogekuri/GAlias/compare/v0.51.0..v0.51.1
+[0.51.2]: https://github.com/Ogekuri/GAlias/compare/v0.51.0..v0.51.2
