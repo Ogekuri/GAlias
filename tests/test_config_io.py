@@ -1,8 +1,12 @@
 """@brief Isolated configuration contract tests, ordered by dependency level.
-@details HDT Refactorer: replaces the removed writer tests; preserves loader
-and default coverage while adding schema, path, rendering, persistence, and
-CLI failure coverage. Filesystem, process, and network boundaries are mocked.
-@satisfies DES-010, REQ-014, REQ-097, REQ-242, REQ-243, REQ-248
+@details HDT Refactorer plus Generator additions: adapts loader, default,
+schema, path, rendering, persistence, and CLI failure coverage to the
+annotated tree renderer, subtree paths, reserved array tokens, English
+confirmations, and global auto-initialization. Filesystem, process, and
+network boundaries are mocked.
+@satisfies DES-010, REQ-014, REQ-097, REQ-242, REQ-243, REQ-248, REQ-250,
+    REQ-251, REQ-252, REQ-257, REQ-258, REQ-260, REQ-261, REQ-262, REQ-263,
+    REQ-264, REQ-265, REQ-266, REQ-267, REQ-268, REQ-269, REQ-270, REQ-271, REQ-272
 """
 
 import copy
@@ -31,11 +35,12 @@ def test_schema_covers_runtime_keys_and_discovery(scope):
     actual = config.defaults(scope)
     assert set(actual) == expected_output
     assert actual == {key: core.DEFAULT_CONFIG[key] for key in expected_output}
-    rendered = config.render_tree()
+    rendered = config.render_params_tree()
     for key in expected_output:
         assert key in rendered
         assert config.resolve_path(f"{scope}:{key}")[1] is config.SCHEMA[scope].fields[key]
-        assert "(Input example: " in rendered
+    assert "Default :" in rendered
+    assert "Set cmd :" in rendered
 
 
 def test_params_lines_label_types_and_allowed_values():
@@ -45,7 +50,8 @@ def test_params_lines_label_types_and_allowed_values():
     @return {None} Every field line carries type, description, and example.
     @satisfies REQ-242, REQ-251
     """
-    expected_output = ("Value", "Meaning", "MEMORIA", "(Input example: MEMORIA)")
+    expected_output = ("Value", "Default", "Meaning", "MEMORIA",
+                       "--set Global:edit_command MEMORIA")
     original = config.SCHEMA["Global"].fields["edit_command"]
     constrained = config.Parameter(
         str, "Cache strategy", "MEMORIA",
@@ -53,14 +59,15 @@ def test_params_lines_label_types_and_allowed_values():
         example="MEMORIA")
     try:
         config.SCHEMA["Global"].fields["edit_command"] = constrained
-        rendered = config.render_tree()
+        rendered = config.render_params_tree()
     finally:
         config.SCHEMA["Global"].fields["edit_command"] = original
     for token in expected_output:
         assert token in rendered
-    assert "[Selection] Cache strategy. Allowed values:" in rendered
-    assert "[String] Default conventional-commit scope" in config.render_tree()
-    assert "Local:ver_rules:<index>:pattern [String]" in config.render_tree()
+    assert "[Selection] Cache strategy" in rendered
+    assert "[String] Default conventional-commit scope" in config.render_params_tree()
+    assert "Local:ver_rules:0:pattern" in config.render_params_tree()
+    assert "Item Schema" in config.render_params_tree()
 
 
 @pytest.mark.parametrize("path", ["", "global", "Global:", "Local::work", "Local:editor",
@@ -132,14 +139,19 @@ def test_tree_tables_and_canonical_global_order():
     @satisfies REQ-192, REQ-250
     """
     expected_output = list(core.GLOBAL_CONFIG_KEYS)
-    actual = config.render_tree({scope: config.defaults(scope) for scope in config.SCHEMA})
-    positions = [actual.index(key + " =") for key in expected_output]
+    actual = config.render_values_tree(
+        {scope: config.defaults(scope) for scope in config.SCHEMA})
+    positions = [actual.index(key + " ") for key in expected_output]
     assert positions == sorted(positions)
     assert all(char in actual for char in "┌┬┐├┼┤└┴┘─│")
-    assert "edit_command = edit\n" in actual
+    assert "Application_Configuration" in actual
+    assert "[Path: Global]" in actual and "[Path: Local]" in actual
+    assert '= "edit"' in actual
     assert '"edit_command"' not in actual
-    assert "pattern = README.md" in actual
-    assert "Index" in actual and "Value" in actual
+    assert "(default)" in actual
+    assert "cell target: Local:ver_rules:<Idx>:<Field>" in actual
+    assert "add: :+" in actual
+    assert "Idx" in actual and "pattern" in actual and "regex" in actual
 
 
 @pytest.fixture
@@ -216,7 +228,8 @@ def test_every_field_roundtrips_and_unsets(sandbox, capsys, scope, key):
     core.main(["--get", f"{scope}:{key}"], check_updates=False)
     assert json.loads(capsys.readouterr().out) == expected_output
     core.main(["--unset", f"{scope}:{key}"], check_updates=False)
-    assert json.loads(files[paths[scope]]) == {}
+    stored = json.loads(files[paths[scope]])
+    assert stored.get(key, expected_output) == expected_output
     capsys.readouterr()
     core.main(["--get", f"{scope}:{key}"], check_updates=False)
     assert json.loads(capsys.readouterr().out) == expected_output
@@ -268,16 +281,18 @@ def test_scope_object_and_nested_access(sandbox, capsys):
     ["--set", "Local:work", ""], ["--unset", "Local:ver_rules:99"],
 ])
 def test_invalid_cli_input_leaves_files_unchanged(sandbox, capsys, args):
-    """@brief Fail invalid commands without file mutation or traceback.
-    @details Level 2; covers arity, JSON, type, path bounds, and empty values.
+    """@brief Fail invalid commands without local mutation or traceback.
+    @details Level 2; covers arity, JSON, type, path bounds, and empty values;
+    only the REQ-272 global bootstrap may appear in the synthetic inventory.
     @param sandbox {tuple} Synthetic files and paths.
     @param capsys {pytest.CaptureFixture} Captured output.
     @param args {list[str]} Invalid command vector.
-    @return {None} Non-zero SystemExit and unchanged file inventory.
-    @satisfies REQ-243, REQ-248
+    @return {None} Non-zero SystemExit and only the bootstrapped global file.
+    @satisfies REQ-243, REQ-248, REQ-272
     """
-    files, _ = sandbox
+    files, paths = sandbox
     expected_output = dict(files)
+    expected_output[paths["Global"]] = json.dumps(config.defaults("Global")).encode()
     with pytest.raises(SystemExit) as exc:
         core.main(args, check_updates=False)
     assert exc.value.code != 0
@@ -325,30 +340,35 @@ def test_raw_preserves_bytes_and_global_local_order(sandbox, monkeypatch, capsys
     assert "Global:" in capsys.readouterr().err
 
 
-def test_raw_missing_scope_and_help_are_read_only(sandbox, monkeypatch, capsys):
-    """@brief Handle absent raw files and expose help without writing.
-    @details Level 2; raw missing scope produces stderr only; all help forms work.
+def test_raw_local_missing_and_commands_bootstrap_global(sandbox, monkeypatch, capsys):
+    """@brief Report absent local raw files and bootstrap the global file.
+    @details Level 2; raw missing Local produces stderr only while every
+    configuration command, including help, auto-initializes the global file
+    with schema defaults per REQ-272.
     @param sandbox {tuple} Synthetic files and paths.
     @param monkeypatch {pytest.MonkeyPatch} Stdout boundary replacement.
     @param capsys {pytest.CaptureFixture} Text output capture.
-    @return {None} Empty file inventory and complete command-specific help.
-    @satisfies REQ-097, REQ-243, REQ-249, REQ-252
+    @return {None} Missing-local diagnostics and complete command-specific help.
+    @satisfies REQ-097, REQ-243, REQ-249, REQ-252, REQ-272
     """
-    files, _ = sandbox
-    expected_output = {}
+    files, paths = sandbox
+    expected_output = {paths["Global"]: json.dumps(config.defaults("Global")).encode()}
     binary = io.BytesIO()
     with monkeypatch.context() as patch:
         patch.setattr(config.sys, "stdout", mock.Mock(buffer=binary))
-        core.main(["--print-raw", "Global"], check_updates=False)
+        core.main(["--print-raw", "Local"], check_updates=False)
     assert binary.getvalue() == b""
     assert "missing" in capsys.readouterr().err
+    assert files == expected_output
     for command in config.COMMAND_HELP:
         core.main([command, "--help"], check_updates=False)
         assert "zero-based" in capsys.readouterr().out
         core.main(["--help", command], check_updates=False)
         assert "shell-quoted" in capsys.readouterr().out
     core.main(["--params"], check_updates=False)
+    capsys.readouterr()
     core.main(["--print"], check_updates=False)
+    capsys.readouterr()
     assert files == expected_output
 
 
@@ -419,3 +439,139 @@ def test_configuration_get_does_not_replace_git_get(sandbox):
         core.main(["--get", "Local:work"], check_updates=False)
         synchronize.assert_called_once_with()
     assert core.COMMANDS["get"] is expected_output
+
+
+def test_bootstrap_creates_global_defaults_before_reads(sandbox, capsys):
+    """@brief Auto-initialize the missing global file with schema defaults.
+    @details Level 2; a bare --get on an empty synthetic filesystem creates
+    the global directory tree and config.json through the atomic write path.
+    @param sandbox {tuple} Synthetic files and paths.
+    @param capsys {pytest.CaptureFixture} Captured output.
+    @return {None} Global defaults exist and the read resolves the default.
+    @satisfies REQ-272
+    """
+    files, paths = sandbox
+    expected_output = {paths["Global"]: json.dumps(config.defaults("Global")).encode()}
+    core.main(["--get", "Global:edit_command"], check_updates=False)
+    assert json.loads(capsys.readouterr().out) == "edit"
+    assert files == expected_output
+
+
+def test_array_row_lifecycle_and_reindexing(sandbox, capsys):
+    """@brief Exercise append, insert, cell update, and row deletion tokens.
+    @details Level 2; reserved tokens mutate ver_rules through the CLI while
+    confirmations name the assigned indices and deletion re-indexes
+    contiguously from zero without gaps.
+    @param sandbox {tuple} Synthetic files and paths.
+    @param capsys {pytest.CaptureFixture} Captured output.
+    @return {None} Persisted rows and confirmations follow the token contract.
+    @satisfies REQ-265, REQ-266, REQ-267, REQ-268, REQ-269, REQ-271
+    """
+    files, paths = sandbox
+    rule = {"pattern": "VERSION", "regex": "(\\d+\\.\\d+\\.\\d+)"}
+    core.main(["--set", "Local:ver_rules:+", json.dumps(rule)], check_updates=False)
+    assert "appended to ver_rules at index 3" in capsys.readouterr().out
+    core.main(["--set", "Local:ver_rules:insert:0", json.dumps({"pattern": "!tmp/**"})],
+              check_updates=False)
+    assert "inserted into ver_rules at index 0" in capsys.readouterr().out
+    core.main(["--get", "Local:ver_rules:0"], check_updates=False)
+    assert json.loads(capsys.readouterr().out) == {"pattern": "!tmp/**"}
+    core.main(["--set", "Local:ver_rules:1:pattern", "CHANGES.md"], check_updates=False)
+    assert "Property 'pattern' at index 1 updated" in capsys.readouterr().out
+    core.main(["--unset", "Local:ver_rules:0"], check_updates=False)
+    removed = capsys.readouterr().out
+    assert "Item at index 0 removed" in removed
+    assert "re-indexed (4 items remaining, indices 0..3)" in removed
+    core.main(["--get", "Local:ver_rules:0:pattern"], check_updates=False)
+    assert json.loads(capsys.readouterr().out) == "CHANGES.md"
+    stored = json.loads(files[paths["Local"]])
+    assert [row["pattern"] for row in stored["ver_rules"]] == [
+        "CHANGES.md", "src/**/*.py", "pyproject.toml", "VERSION"]
+
+
+def test_out_of_bounds_indices_fail_without_writing(sandbox, capsys):
+    """@brief Reject out-of-range row and insert indices with range errors.
+    @details Level 2; both --set row updates and :insert positions outside the
+    valid range exit non-zero stating the range and the ':append' alternative.
+    @param sandbox {tuple} Synthetic files and paths.
+    @param capsys {pytest.CaptureFixture} Captured stderr.
+    @return {None} Only the REQ-272 global bootstrap exists after the failures.
+    @satisfies REQ-270
+    """
+    files, paths = sandbox
+    expected_output = {paths["Global"]: json.dumps(config.defaults("Global")).encode()}
+    with pytest.raises(SystemExit) as exc:
+        core.main(["--set", "Local:ver_rules:9",
+                   json.dumps({"pattern": "X", "regex": "V"})],
+                  check_updates=False)
+    assert exc.value.code != 0
+    row_error = capsys.readouterr().err
+    assert "Index 9 out of bounds" in row_error
+    assert "0..2" in row_error
+    assert ":append" in row_error
+    with pytest.raises(SystemExit):
+        core.main(["--set", "Local:ver_rules:insert:9",
+                   json.dumps({"pattern": "X", "regex": "V"})], check_updates=False)
+    insert_error = capsys.readouterr().err
+    assert "Valid insert positions for ver_rules are 0..3" in insert_error
+    assert files == expected_output
+
+
+def test_print_annotations_subtrees_and_empty_hints(sandbox, capsys):
+    """@brief Verify badges, custom annotations, subtree prints, and hints.
+    @details Level 2; custom values annotate the schema default, subtree paths
+    drop the Application_Configuration root header, whole-array overwrites
+    report the new index range, emptied arrays render the append hint, and
+    clearing prints the defaults warning.
+    @param sandbox {tuple} Synthetic files and paths.
+    @param capsys {pytest.CaptureFixture} Captured output.
+    @return {None} Rendering matches the annotated tree contract.
+    @satisfies REQ-250, REQ-251, REQ-257, REQ-258, REQ-261, REQ-262, REQ-271
+    """
+    _files, _paths = sandbox
+    core.main(["--set", "Local:work", "topic"], check_updates=False)
+    capsys.readouterr()
+    core.main(["--print", "Local"], check_updates=False)
+    subtree = capsys.readouterr().out
+    assert "[Path: Local]" in subtree
+    assert "Application_Configuration" not in subtree
+    assert '= "topic"' in subtree
+    assert '(custom | default: "work")' in subtree
+    assert "(default)" in subtree
+    core.main(["--print"], check_updates=False)
+    whole = capsys.readouterr().out
+    assert "Application_Configuration" in whole
+    assert "[Path: Global]" in whole and "[Path: Local]" in whole
+    assert "cell target: Local:ver_rules:<Idx>:<Field>" in whole
+    assert "add: :+" in whole
+    core.main(["--set", "Local:ver_rules", "[]"], check_updates=False)
+    assert "Array ver_rules overwritten with 0 items." in capsys.readouterr().out
+    core.main(["--print", "Local:ver_rules"], check_updates=False)
+    assert "(empty list — add row with: --set Local:ver_rules:+ <value>)" in capsys.readouterr().out
+    core.main(["--unset", "Local:ver_rules"], check_updates=False)
+    assert "WARNING: All items removed from Local:ver_rules; defaults apply." in capsys.readouterr().out
+
+
+def test_params_subtree_commands_and_schema_table(sandbox, capsys):
+    """@brief Verify --params subtree filtering and copy-pasteable commands.
+    @details Level 2; the ver_rules subtree documents the Item Schema table
+    and every row manipulation command with full canonical paths; scalar
+    parameters document the default line and the restore command.
+    @param sandbox {tuple} Synthetic files and paths.
+    @param capsys {pytest.CaptureFixture} Captured output.
+    @return {None} Documented commands carry complete canonical paths.
+    @satisfies REQ-252, REQ-263, REQ-264
+    """
+    _files, _paths = sandbox
+    core.main(["--params", "Local:ver_rules"], check_updates=False)
+    documented = capsys.readouterr().out
+    assert "Item Schema" in documented
+    assert "--set Local:ver_rules:+" in documented
+    assert "--set Local:ver_rules:insert:0" in documented
+    assert "--unset Local:ver_rules:0" in documented
+    assert "--set Local:ver_rules:0:pattern" in documented
+    assert "Application_Configuration" not in documented
+    core.main(["--params", "Global:edit_command"], check_updates=False)
+    parameter = capsys.readouterr().out
+    assert 'Default : "edit" (restored via: --unset Global:edit_command)' in parameter
+    assert '--set Global:edit_command "vim -f"' in parameter

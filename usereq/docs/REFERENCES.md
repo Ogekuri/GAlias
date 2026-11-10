@@ -33,7 +33,7 @@ import sys
 
 ---
 
-# configuration.py | Python | 533L | 20 symbols | 9 imports | 32 comments
+# configuration.py | Python | 1074L | 37 symbols | 9 imports | 50 comments
 > Path: `src/git_alias/configuration.py`
 
 ## Imports
@@ -51,14 +51,14 @@ from typing import Any
 
 ## Definitions
 
-### class `class Parameter` `@dataclass(frozen=True)` (L20-47)
+### class `class Parameter` `@dataclass(frozen=True)` (L22-51)
 - @brief Describe one configurable field or container.
-- @details Immutable metadata node; nested dictionaries preserve display order. Construction is O(1); consumers deep-copy defaults before mutation.
+- @details Immutable metadata node; nested dictionaries preserve display order. Construction is O(1); consumers deep-copy defaults before mutation. A dict node with a non-None item declares a dynamic map keyed by arbitrary strings whose values validate against the item schema.
 - @param kind {type} Exact JSON-compatible Python type of the value.
 - @param description {str} English field meaning and input constraints.
 - @param default {Any} Default applied when the key is absent.
-- @param fields {dict[str, Parameter]} Object field schema; empty for scalars.
-- @param item {Parameter | None} Array element schema; None for non-arrays.
+- @param fields {dict[str, Parameter]} Object field schema; empty for scalars and maps.
+- @param item {Parameter | None} Array element schema, or map value schema for dict nodes.
 - @param choices {tuple[tuple[str, str], ...]} Allowed values with meanings.
 - @param example {str} One canonical input example for discovery output.
 - @param empty {bool} Permit an empty string value.
@@ -66,23 +66,24 @@ from typing import Any
 - @return {Parameter} Immutable schema node.
 - @satisfies REQ-242, REQ-251
 
-- var `RULE = Parameter(dict, "Version rule pairing a file selector with an extractor", fields={` (L50)
+- var `RULE = Parameter(dict, "Version rule pairing a file selector with an extractor", fields={` (L54)
 - @brief Version-rule element schema with canonical object fields.
 - @details Regex is required for inclusion patterns; negation patterns may omit it.
-- var `SCHEMA = {` (L64)
+- var `SCHEMA = {` (L69)
 - @brief Canonical ordered schema for every persisted configuration field.
 - @details Global keys stay contiguous in REQ-192 order; Local owns repository
 branches, the conventional-commit scope, and version rules. No field defines
-constrained choices today; the schema and renderers fully support them.
+constrained choices or dynamic maps today; the schema and renderers fully
+support both constructs for future fields.
 - @satisfies DES-006, DES-010, REQ-186, REQ-191, REQ-192, REQ-242
-- var `TYPE_LABELS = {str: "String", int: "Integer", bool: "Boolean",` (L110)
+- var `TYPE_LABELS = {str: "String", int: "Integer", float: "Float", bool: "Boolean",` (L115)
 - @brief Display labels for schema types used by parameter discovery output.
 - @details Selection labels constrained fields whose choices are defined.
 - @satisfies REQ-251
-- var `COMMAND_HELP = {` (L115)
+- var `COMMAND_HELP = {` (L120)
 - @brief Management command syntax and descriptions used by both help paths.
 - @satisfies REQ-243, REQ-252
-### fn `def defaults(scope: str) -> dict[str, Any]` (L151-162)
+### fn `def defaults(scope: str) -> dict[str, Any]` (L166-177)
 - @brief Shared input instructions appended to configuration command help.
 - @brief Copy the defaults belonging to one scope.
 - @details O(N) deep copy protecting schema defaults from nested mutation.
@@ -92,17 +93,17 @@ constrained choices today; the schema and renderers fully support them.
 - @satisfies REQ-244, REQ-247, REQ-252
 - @satisfies REQ-242, REQ-246
 
-### fn `def resolve_path(path: str) -> tuple[list[str], Parameter]` (L163-184)
+### fn `def resolve_path(path: str) -> tuple[list[str], Parameter]` (L178-203)
 - @brief Resolve a colon path against the schema without filesystem I/O.
-- @details O(D) traversal; indices must be canonical non-negative decimals.
-- @param path {str} Scope followed by optional fields and array indices.
+- @details O(D) traversal. Array indices must be canonical non-negative decimals. A dict node with an item schema accepts any non-empty token as a dynamic map key and descends to the item schema.
+- @param path {str} Scope followed by optional fields, indices, and map keys.
 - @return {tuple[list[str], Parameter]} Path tokens and terminal schema node.
 - @throws ValueError Unknown scope, unknown field, empty segment, or invalid index.
-- @satisfies REQ-244, REQ-248
+- @satisfies REQ-244, REQ-248, REQ-267, REQ-268
 
-### fn `def validate(value: Any, spec: Parameter, path: str) -> Any` (L185-224)
+### fn `def validate(value: Any, spec: Parameter, path: str) -> Any` (L204-248)
 - @brief Validate and copy a canonical JSON value.
-- @details O(N) recursive validation rejecting wrong types, unknown object fields, and invalid rule structures; compiles rule regexes. Normalizes only fields marked strip; performs no I/O.
+- @details O(N) recursive validation rejecting wrong types, unknown object fields, and invalid rule structures; compiles rule regexes. Dict nodes with an item schema validate every value against that item schema and accept arbitrary string keys. Normalizes only fields marked strip; performs no I/O.
 - @param value {Any} Candidate JSON value.
 - @param spec {Parameter} Expected type, children, and constraints.
 - @param path {str} Diagnostic path.
@@ -110,9 +111,9 @@ constrained choices today; the schema and renderers fully support them.
 - @throws ValueError Wrong type, unknown key, empty required string, invalid rule.
 - @satisfies REQ-207, REQ-245, REQ-248
 
-### fn `def parse_value(text: str, spec: Parameter, path: str) -> Any` (L225-241)
+### fn `def parse_value(text: str, spec: Parameter, path: str) -> Any` (L249-267)
 - @brief Decode one CLI value using the selected field type.
-- @details O(N) parsing; plain strings stay literal; JSON strings and complex JSON values decode without shell evaluation.
+- @details O(N) parsing; plain strings stay literal; JSON strings and complex JSON values (objects, arrays, integers, floats, booleans) decode without shell evaluation so CLI strings are cast to strict schema types before persistence.
 - @param text {str} One argument after shell processing.
 - @param spec {Parameter} Selected schema node.
 - @param path {str} Diagnostic path.
@@ -120,7 +121,7 @@ constrained choices today; the schema and renderers fully support them.
 - @throws ValueError Malformed JSON or schema mismatch.
 - @satisfies REQ-245, REQ-248, REQ-252
 
-### fn `def read_scope(path: Path, scope: str) -> dict[str, Any]` (L242-262)
+### fn `def read_scope(path: Path, scope: str) -> dict[str, Any]` (L268-288)
 - @brief Read one scope without creating files or inserting defaults.
 - @details O(N) JSON decode plus validation; absent files yield an empty object; out-of-scope stored keys are ignored; invalid data fails closed.
 - @param path {Path} Configuration file.
@@ -130,117 +131,304 @@ constrained choices today; the schema and renderers fully support them.
 - @throws ValueError Invalid JSON, encoding, root object, or field values.
 - @satisfies DES-006, REQ-015, REQ-097, REQ-248
 
-### fn `def write_scope(path: Path, data: dict[str, Any]) -> None` (L263-289)
+### fn `def write_scope(path: Path, data: dict[str, Any]) -> None` (L289-316)
 - @brief Atomically replace one validated configuration file.
-- @details O(N) serialization; writes and fsyncs a private temporary file in the target directory then renames it. Cleans the temporary file on failure and creates parent directories only for this explicit mutation path.
+- @details O(N) serialization; writes and fsyncs a private temporary file in the target directory then renames it over the target. Cleans the temporary file on failure and creates parent directories for this explicit mutation or bootstrapping path.
 - @param path {Path} Selected destination.
 - @param data {dict[str, Any]} Validated canonical scope object.
 - @return {None} Persisted JSON ends with one newline.
 - @throws OSError Directory creation, write, flush, or replace failure.
-- @satisfies REQ-014, REQ-097, REQ-253, REQ-254
+- @satisfies REQ-014, REQ-097, REQ-253, REQ-254, REQ-272
 
-### fn `def descend(data: Any, parts: list[str]) -> Any` (L290-306)
-- @brief Traverse existing JSON fields and array indices.
+### fn `def descend(data: Any, parts: list[str]) -> Any` (L317-333)
+- @brief Traverse existing JSON fields, indices, and map keys.
 - @details O(D) traversal rejecting missing members and out-of-range indices.
 - @param data {Any} Effective scope or subtree.
 - @param parts {list[str]} Schema-validated relative path tokens.
 - @return {Any} Referenced subtree; callers copy before mutation.
-- @throws ValueError Missing field or out-of-range array index.
-- @satisfies REQ-244, REQ-246, REQ-248
+- @throws ValueError Missing field, map key, or out-of-range array index.
+- @satisfies REQ-244, REQ-246, REQ-248, REQ-268
 
-### fn `def change_scope(data: dict[str, Any], parts: list[str], value: Any,` (L307-348)
+### fn `def change_scope(data: dict[str, Any], parts: list[str], value: Any,` (L334-375)
 - @brief Compute a validated scope replacement without writing.
-- @details O(N) copy plus validation; absent top-level values use defaults for nested changes; removing top-level keys restores defaults on the next read. Nested array deletion is guarded by an existence probe.
+- @details O(N) copy plus validation; absent top-level values use defaults for nested changes; removing top-level keys restores defaults on the next read. Array row deletion re-indexes the list contiguously from zero, and out-of-range indices fail with the valid range and the ':append' hint.
 - @param data {dict[str, Any]} Persisted canonical scope values.
 - @param parts {list[str]} Schema-validated full path including the scope.
 - @param value {Any} Parsed replacement; ignored when unset is True.
 - @param unset {bool} Delete instead of assign.
 - @return {dict[str, Any]} Validated scope after mutation.
-- @throws ValueError Missing nested member or invalid resulting structure.
-- @satisfies REQ-245, REQ-247, REQ-248
+- @throws ValueError Missing nested member, out-of-range index, or invalid structure.
+- @satisfies REQ-245, REQ-247, REQ-248, REQ-269, REQ-270
 
-### fn `def plain(value: Any) -> str` (L349-363)
-- @brief Render one scalar as plain text without code-like syntax.
-- @details O(1) formatting; strings print verbatim, booleans lowercase, other scalars via str; complex values are never passed here.
-- @param value {Any} Scalar configuration value.
-- @return {str} Unquoted human-readable text.
-- @satisfies REQ-250
+### fn `def _array_index(parent: list[Any], parts: list[str], unset: bool) -> int` `priv` (L376-401)
+- @brief Resolve one array index token with a strict bounds check.
+- @details O(1); rejects non-canonical decimals and out-of-range indices with an English diagnostic carrying the valid range and the ':append alternative so scripts can self-correct.
+- @param parent {list[Any]} Target array value.
+- @param parts {list[str]} Full path including the scope; the last token is the index.
+- @param unset {bool} True for deletions; selects the diagnostic verb.
+- @return {int} Zero-based index inside the array.
+- @throws ValueError Non-canonical index or index outside 0..len(parent)-1.
+- @satisfies REQ-270
 
-### fn `def table(headers: list[str], rows: list[list[str]]) -> list[str]` (L364-384)
+### fn `def _mutate_array(data: dict[str, Any], parts: list[str], value: Any,` `priv` (L402-442)
+- @brief Append or insert one validated item into an array parameter.
+- @details O(N) copy; backfills a missing top-level array from defaults, appends at the end or inserts at the requested position shifting later items down, and validates the resulting scope. Insert at the length equals append.
+- @param data {dict[str, Any]} Persisted canonical scope values.
+- @param parts {list[str]} Schema-validated array path including the scope.
+- @param value {Any} Parsed and validated item value.
+- @param mode {str} 'append' or 'insert'.
+- @param index {int | None} Zero-based insert position for 'insert' mode.
+- @return {tuple[dict[str, Any], int]} Validated scope and the assigned index.
+- @throws ValueError Out-of-range insert position or invalid resulting structure.
+- @satisfies REQ-265, REQ-266
+
+### fn `def _split_set_target(raw: str) -> tuple[str, str, int | None]` `priv` (L443-460)
+- @brief Split reserved append and insert tokens off a --set path.
+- @details O(len(path)); recognizes the trailing ':append' or ':+' keyword and the ':insert:<Idx>' suffix with a canonical zero-based index; every other path is an assignment target.
+- @param raw {str} Raw PATH operand of --set.
+- @return {tuple[str, str, int | None]} Target path, mode ('assign', 'append', insert'), and the insert index when mode is 'insert'.
+- @satisfies REQ-265, REQ-266
+
+### fn `def _bootstrap_global(paths: dict[str, Path]) -> None` `priv` (L461-475)
+- @brief Create the global configuration file with defaults when missing.
+- @details O(1) existence probe plus one atomic default write; creates the directory tree through write_scope before any configuration command proceeds. The local workspace file is never created here.
+- @param paths {dict[str, Path]} Global and Local file destinations.
+- @return {None} Global config.json exists with schema defaults on return.
+- @throws OSError Directory creation, write, or replace failure.
+- @satisfies REQ-272
+
+### fn `def _scalar_text(value: Any) -> str` `priv` (L476-494)
+- @brief Render one value as JSON-style display text.
+- @details O(1) for scalars; strings render JSON-quoted, booleans lowercase, containers compact JSON; credentials render unmasked plain text.
+- @param value {Any} Configuration value.
+- @return {str} Display text without code-like decorations.
+- @satisfies REQ-250, REQ-274
+
+### fn `def _default_note(value: Any, spec: Parameter) -> str` `priv` (L495-508)
+- @brief Build the default or custom annotation for one value.
+- @details O(1) deep equality against the schema default; custom notes carry the JSON-rendered default so --unset restoration is explicit.
+- @param value {Any} Effective value.
+- @param spec {Parameter} Schema node owning the default.
+- @return {str} '(default)' or '(custom | default: <default>)'.
+- @satisfies REQ-258
+
+### fn `def _is_section(spec: Parameter) -> bool` `priv` (L509-517)
+- @brief Report whether a schema node renders as a named section.
+- @details O(1); sections are fixed-field dict nodes, excluding dynamic maps.
+- @param spec {Parameter} Schema node.
+- @return {bool} True for fixed-field object nodes.
+
+### fn `def table(headers: list[str], rows: list[list[str]]) -> list[str]` (L518-538)
 - @brief Render a rectangular box-drawing table.
 - @details O(N) cell scan; callers pre-flatten cells to plain text so no code-like syntax appears; performs no I/O or width truncation.
 - @param headers {list[str]} Column labels.
 - @param rows {list[list[str]]} Rectangular string cells.
 - @return {list[str]} Border, header, separator, rows, and closing border.
-- @satisfies REQ-250, REQ-251
+- @satisfies REQ-250, REQ-251, REQ-259, REQ-260, REQ-261, REQ-264
 
-### fn `def _type_label(spec: Parameter) -> str` `priv` (L385-394)
-- @brief Resolve the discovery label for one schema node.
+### fn `def _type_label(spec: Parameter) -> str` `priv` (L539-548)
+- @brief Resolve the flat discovery label for one schema node.
 - @details O(1) lookup; constrained fields label as Selection.
 - @param spec {Parameter} Schema node.
 - @return {str} English input-type label.
 - @satisfies REQ-251
 
-### fn `def _array_rows(value: list[Any]) -> list[list[str]]` `priv` (L395-412)
-- @brief Flatten array entries into plain table cells.
-- @details O(N) traversal; object entries join their present fields as `key = value` text separated by a middle dot, avoiding code-like syntax.
+### fn `def _params_type_label(spec: Parameter) -> str` `priv` (L549-570)
+- @brief Resolve the constrained type label used by --params headers.
+- @details O(1); composes Array[...] and Map[String, ...] container labels and appends non-empty and boolean constraints to scalar bases.
+- @param spec {Parameter} Schema node.
+- @return {str} Bracketed English type and constraint label.
+- @satisfies REQ-263
+
+### fn `def _command_arg(text: str, style: str = "str") -> str` `priv` (L571-589)
+- @brief Render one example value as a shell-safe command argument.
+- @details O(len(text)); 'raw' emits bare tokens, 'json' single-quotes JSON payloads, 'str' double-quotes plain strings and falls back to single quotes when the text itself contains double quotes.
+- @param text {str} Example text.
+- @param style {str} One of 'str', 'json', 'raw'.
+- @return {str} Copy-pasteable shell argument.
+- @satisfies REQ-252, REQ-263, REQ-264
+
+### fn `def _values_widths(entries: list[tuple[str, Parameter]]) -> tuple[int, int]` `priv` (L590-604)
+- @brief Compute sibling name and scalar value column widths.
+- @details O(N) sibling scan; complex containers contribute names only so scalar annotations align across the section.
+- @param entries {list[tuple[str, Parameter]]} Sibling name and schema pairs.
+- @return {tuple[int, int]} Name width and scalar display width, minimum 1.
+
+### fn `def _values_array(lines: list[str], branch: str, child: str, name: str,` `priv` (L605-640)
+- @brief Append the --print rendering of one array parameter.
+- @details O(N); emits the count header with row or cell target syntax and the Idx table, or the empty-list hint with a copy-pasteable append command.
+- @param lines {list[str]} Output line accumulator.
+- @param branch {str} Tree connector prefix of the parameter line.
+- @param child {str} Continuation prefix used to indent the table.
+- @param name {str} Parameter name printed verbatim as the path token.
+- @param item {Parameter} Array element schema.
 - @param value {list[Any]} Effective array value.
-- @return {list[list[str]]} One `[index, text]` row per entry.
-- @satisfies REQ-250
+- @param path {str} Canonical colon path of the parameter.
+- @param nw {int} Sibling name column width.
+- @return {None} Appends rendered lines.
+- @satisfies REQ-250, REQ-260, REQ-261, REQ-262
 
-### fn `def render_tree(values: dict[str, dict[str, Any]] | None = None) -> str` (L413-465)
-- @brief Render schema discovery or the effective configuration.
-- @details O(N) schema traversal; scopes form tree branches. Discovery lines label the input type, description, and input example, adding allowed-value tables for constrained fields; effective output prints scalars as plain text and arrays as Index/Value tables.
-- @param values {dict[str, dict[str, Any]] | None} Effective scopes; None selects params.
-- @return {str} Unicode tree with box-drawing tables, without trailing newline.
-- @satisfies REQ-192, REQ-250, REQ-251
+### fn `def _values_map(lines: list[str], branch: str, child: str, name: str,` `priv` (L641-666)
+- @brief Append the --print rendering of one dynamic map parameter.
+- @details O(N); emits the entry-count header with key target syntax and the Key/Value table, or the empty-map hint with a copy-pasteable set command.
+- @param lines {list[str]} Output line accumulator.
+- @param branch {str} Tree connector prefix of the parameter line.
+- @param child {str} Continuation prefix used to indent the table.
+- @param name {str} Parameter name printed verbatim as the path token.
+- @param value {dict[str, Any]} Effective map value.
+- @param path {str} Canonical colon path of the parameter.
+- @param nw {int} Sibling name column width.
+- @return {None} Appends rendered lines.
+- @satisfies REQ-250, REQ-259, REQ-262
 
-### fn `def print_raw(paths: dict[str, Path]) -> None` (L466-485)
+### fn `def _values_node(lines: list[str], name: str, spec: Parameter, value: Any,` `priv` (L667-718)
+- @brief Append the --print rendering of one configuration node.
+- @details O(subtree); sections recurse with [Path: ...] badges, arrays and maps delegate to their renderers, and scalars plus selections print the value with the default or custom annotation; selection values add a table and the exact set command hint.
+- @param lines {list[str]} Output line accumulator.
+- @param name {str} Node name printed verbatim as its CLI path token.
+- @param spec {Parameter} Schema node.
+- @param value {Any} Effective value at this node.
+- @param prefix {str} Tree prefix inherited from the parent section.
+- @param tokens {tuple[str, ...]} Canonical path tokens including the scope.
+- @param is_last {bool} Selects the └── connector.
+- @param widths {tuple[int, int]} Sibling name and scalar column widths.
+- @param file_path {Path | None} Scope file shown on scope-level badges.
+- @return {None} Appends rendered lines.
+- @satisfies REQ-250, REQ-257, REQ-258, REQ-259
+
+### fn `def render_values_tree(values: dict[str, dict[str, Any]],` (L719-751)
+- @brief Render the effective configuration as an annotated box tree.
+- @details O(N); without root_path prints the Application_Configuration root header plus every scope; with root_path prints only that subtree. Sections carry canonical [Path: ...] badges, scalars carry default or custom annotations, and arrays, maps, and selections render as actionable tables.
+- @param values {dict[str, dict[str, Any]]} Effective values per scope.
+- @param paths {dict[str, Path] | None} Scope files shown on scope badges.
+- @param root_path {str | None} Optional colon path restricting the output.
+- @return {str} Unicode tree without trailing newline.
+- @throws ValueError Invalid root_path.
+- @satisfies DES-009, REQ-250, REQ-257, REQ-258, REQ-259, REQ-260, REQ-261, REQ-262
+
+### fn `def _params_node(lines: list[str], name: str, spec: Parameter, prefix: str,` `priv` (L752-821)
+- @brief Append the --params documentation rendering of one node.
+- @details O(subtree); prints the '[<type and constraints>] <description> header, the Default and Set command lines with full canonical paths, allowed-value and item-schema tables, array and map manipulation command sets, and recurses into sections.
+- @param lines {list[str]} Output line accumulator.
+- @param name {str} Node name printed verbatim as its CLI path token.
+- @param spec {Parameter} Schema node.
+- @param prefix {str} Tree prefix inherited from the parent section.
+- @param tokens {tuple[str, ...]} Canonical path tokens including the scope.
+- @param is_last {bool} Selects the └── connector.
+- @param nw {int | None} Sibling name width assigned by the parent section.
+- @return {None} Appends rendered lines.
+- @satisfies REQ-251, REQ-263, REQ-264
+
+### fn `def _params_array(lines: list[str], meta: str, path: str, spec: Parameter,` `priv` (L822-870)
+- @brief Append the --params documentation of one array parameter.
+- @details O(item schema); object arrays add the Item Schema table and the complete append, insert, update, reset, replace, delete, overwrite, and clear command set with full canonical paths.
+- @param lines {list[str]} Output line accumulator.
+- @param meta {str} Metadata alignment prefix of the parameter.
+- @param path {str} Canonical colon path of the array parameter.
+- @param spec {Parameter} Array schema node owning the whole-value example.
+- @param item {Parameter} Array element schema.
+- @return {None} Appends rendered lines.
+- @satisfies REQ-251, REQ-264
+
+### fn `def render_params_tree(root_path: str | None = None) -> str` (L871-892)
+- @brief Render the schema-derived parameter documentation tree.
+- @details O(N); without root_path prints the whole Application_Configuration documentation tree; with root_path prints only that subtree or parameter.
+- @param root_path {str | None} Optional colon path restricting the output.
+- @return {str} Unicode tree without trailing newline.
+- @throws ValueError Invalid root_path.
+- @satisfies REQ-251, REQ-263, REQ-264
+
+### fn `def print_raw(paths: dict[str, Path]) -> None` (L893-912)
 - @brief Emit exact stored bytes with identification on stderr only.
 - @details O(N) reads; missing files are reported and skipped. No decoding, JSON parsing, masking, reformatting, or added stdout newline.
 - @param paths {dict[str, Path]} Selected scope paths in output order.
 - @return {None} Writes file bytes to stdout.buffer.
 - @throws OSError File read or output failure.
-- @satisfies REQ-097, REQ-249
+- @satisfies REQ-097, REQ-249, REQ-274
 
-### fn `def execute(args: list[str], paths: dict[str, Path]) -> None` (L486-534)
+### fn `def _assign_confirmation(parts: list[str], spec: Parameter, value: Any,` `priv` (L913-942)
+- @brief Build the English confirmation line for one --set mutation.
+- @details O(D) schema walks; row, cell, map-key, array, and map overwrites name the exact assigned target and index so output matches the --print identifiers.
+- @param parts {list[str]} Canonical path tokens of the mutation target.
+- @param spec {Parameter} Terminal schema node of the target.
+- @param value {Any} Assigned value.
+- @param target {str} Raw target path text.
+- @return {str} Single-line English confirmation.
+- @satisfies REQ-245, REQ-267, REQ-271
+
+### fn `def _overwrite_confirmation(parts: list[str], spec: Parameter, value: Any) -> str` `priv` (L943-960)
+- @brief Build the confirmation for a whole array or map overwrite.
+- @details O(1); reports the item or key count and the resulting index range.
+- @param parts {list[str]} Canonical path tokens of the overwritten container.
+- @param spec {Parameter} Container schema node.
+- @param value {Any} New container value.
+- @return {str} Single-line English confirmation.
+- @satisfies REQ-271
+
+### fn `def _unset_confirmation(parts: list[str], spec: Parameter,` `priv` (L961-997)
+- @brief Build the English confirmation line for one --unset mutation.
+- @details O(D) schema walks; row deletions report the contiguous re-indexing, cell resets name the restored property, and container clears print a WARNING that defaults apply again.
+- @param parts {list[str]} Canonical path tokens of the unset target.
+- @param spec {Parameter} Terminal schema node of the target.
+- @param result {dict[str, Any]} Validated scope after the mutation.
+- @return {str} Single-line English confirmation.
+- @satisfies REQ-247, REQ-269, REQ-271
+
+### fn `def execute(args: list[str], paths: dict[str, Path]) -> None` (L998-1075)
 - @brief Execute one standalone configuration command.
-- @details O(N) selected-scope processing; help and params avoid reads; raw output bypasses JSON validation. Mutations validate fully before exactly one atomic write of the selected scope.
+- @details O(N) selected-scope processing. Bootstraps the missing global configuration file before every command; help and raw output avoid JSON reads; --print and --params accept one optional colon path restricting the tree; mutations validate fully before exactly one atomic write of the selected scope and print an English confirmation.
 - @param args {list[str]} Command plus operands, or command plus --help.
 - @param paths {dict[str, Path]} Global and Local file destinations.
-- @return {None} Emits JSON, tree, raw bytes, help, or a mutation confirmation.
+- @return {None} Emits JSON, trees, raw bytes, help, or a confirmation.
 - @throws ValueError Invalid command operands, path, input, or stored JSON.
-- @throws OSError Configuration read or write failure.
-- @satisfies REQ-014, REQ-243, REQ-245, REQ-246, REQ-247, REQ-248, REQ-253
+- @throws OSError Configuration read, bootstrap, or write failure.
+- @satisfies REQ-014, REQ-243, REQ-245, REQ-246, REQ-247, REQ-248, REQ-250, REQ-251, REQ-253, REQ-265, REQ-266, REQ-267, REQ-268, REQ-269, REQ-271, REQ-272
 
 ## Symbol Index
 |Symbol|Kind|Vis|Lines|Sig|
 |---|---|---|---|---|
-|`Parameter`|class|pub|20-47|class Parameter|
-|`RULE`|var|pub|50||
-|`SCHEMA`|var|pub|64||
-|`TYPE_LABELS`|var|pub|110||
-|`COMMAND_HELP`|var|pub|115||
-|`defaults`|fn|pub|151-162|def defaults(scope: str) -> dict[str, Any]|
-|`resolve_path`|fn|pub|163-184|def resolve_path(path: str) -> tuple[list[str], Parameter]|
-|`validate`|fn|pub|185-224|def validate(value: Any, spec: Parameter, path: str) -> Any|
-|`parse_value`|fn|pub|225-241|def parse_value(text: str, spec: Parameter, path: str) ->...|
-|`read_scope`|fn|pub|242-262|def read_scope(path: Path, scope: str) -> dict[str, Any]|
-|`write_scope`|fn|pub|263-289|def write_scope(path: Path, data: dict[str, Any]) -> None|
-|`descend`|fn|pub|290-306|def descend(data: Any, parts: list[str]) -> Any|
-|`change_scope`|fn|pub|307-348|def change_scope(data: dict[str, Any], parts: list[str], ...|
-|`plain`|fn|pub|349-363|def plain(value: Any) -> str|
-|`table`|fn|pub|364-384|def table(headers: list[str], rows: list[list[str]]) -> l...|
-|`_type_label`|fn|priv|385-394|def _type_label(spec: Parameter) -> str|
-|`_array_rows`|fn|priv|395-412|def _array_rows(value: list[Any]) -> list[list[str]]|
-|`render_tree`|fn|pub|413-465|def render_tree(values: dict[str, dict[str, Any]] | None ...|
-|`print_raw`|fn|pub|466-485|def print_raw(paths: dict[str, Path]) -> None|
-|`execute`|fn|pub|486-534|def execute(args: list[str], paths: dict[str, Path]) -> None|
+|`Parameter`|class|pub|22-51|class Parameter|
+|`RULE`|var|pub|54||
+|`SCHEMA`|var|pub|69||
+|`TYPE_LABELS`|var|pub|115||
+|`COMMAND_HELP`|var|pub|120||
+|`defaults`|fn|pub|166-177|def defaults(scope: str) -> dict[str, Any]|
+|`resolve_path`|fn|pub|178-203|def resolve_path(path: str) -> tuple[list[str], Parameter]|
+|`validate`|fn|pub|204-248|def validate(value: Any, spec: Parameter, path: str) -> Any|
+|`parse_value`|fn|pub|249-267|def parse_value(text: str, spec: Parameter, path: str) ->...|
+|`read_scope`|fn|pub|268-288|def read_scope(path: Path, scope: str) -> dict[str, Any]|
+|`write_scope`|fn|pub|289-316|def write_scope(path: Path, data: dict[str, Any]) -> None|
+|`descend`|fn|pub|317-333|def descend(data: Any, parts: list[str]) -> Any|
+|`change_scope`|fn|pub|334-375|def change_scope(data: dict[str, Any], parts: list[str], ...|
+|`_array_index`|fn|priv|376-401|def _array_index(parent: list[Any], parts: list[str], uns...|
+|`_mutate_array`|fn|priv|402-442|def _mutate_array(data: dict[str, Any], parts: list[str],...|
+|`_split_set_target`|fn|priv|443-460|def _split_set_target(raw: str) -> tuple[str, str, int | ...|
+|`_bootstrap_global`|fn|priv|461-475|def _bootstrap_global(paths: dict[str, Path]) -> None|
+|`_scalar_text`|fn|priv|476-494|def _scalar_text(value: Any) -> str|
+|`_default_note`|fn|priv|495-508|def _default_note(value: Any, spec: Parameter) -> str|
+|`_is_section`|fn|priv|509-517|def _is_section(spec: Parameter) -> bool|
+|`table`|fn|pub|518-538|def table(headers: list[str], rows: list[list[str]]) -> l...|
+|`_type_label`|fn|priv|539-548|def _type_label(spec: Parameter) -> str|
+|`_params_type_label`|fn|priv|549-570|def _params_type_label(spec: Parameter) -> str|
+|`_command_arg`|fn|priv|571-589|def _command_arg(text: str, style: str = "str") -> str|
+|`_values_widths`|fn|priv|590-604|def _values_widths(entries: list[tuple[str, Parameter]]) ...|
+|`_values_array`|fn|priv|605-640|def _values_array(lines: list[str], branch: str, child: s...|
+|`_values_map`|fn|priv|641-666|def _values_map(lines: list[str], branch: str, child: str...|
+|`_values_node`|fn|priv|667-718|def _values_node(lines: list[str], name: str, spec: Param...|
+|`render_values_tree`|fn|pub|719-751|def render_values_tree(values: dict[str, dict[str, Any]],|
+|`_params_node`|fn|priv|752-821|def _params_node(lines: list[str], name: str, spec: Param...|
+|`_params_array`|fn|priv|822-870|def _params_array(lines: list[str], meta: str, path: str,...|
+|`render_params_tree`|fn|pub|871-892|def render_params_tree(root_path: str | None = None) -> str|
+|`print_raw`|fn|pub|893-912|def print_raw(paths: dict[str, Path]) -> None|
+|`_assign_confirmation`|fn|priv|913-942|def _assign_confirmation(parts: list[str], spec: Paramete...|
+|`_overwrite_confirmation`|fn|priv|943-960|def _overwrite_confirmation(parts: list[str], spec: Param...|
+|`_unset_confirmation`|fn|priv|961-997|def _unset_confirmation(parts: list[str], spec: Parameter,|
+|`execute`|fn|pub|998-1075|def execute(args: list[str], paths: dict[str, Path]) -> None|
 
 
 ---
 
-# core.py | Python | 6040L | 295 symbols | 19 imports | 1824 comments
+# core.py | Python | 6041L | 295 symbols | 19 imports | 1825 comments
 > Path: `src/git_alias/core.py`
 
 ## Imports
@@ -2567,14 +2755,15 @@ Exits with status 1 when `CHANGELOG.md` already exists and `--force-write` was n
 - @param width Input parameter consumed by `print_command_help`.
 - @return Result emitted by `print_command_help` according to command contract.
 
-### fn `def print_all_help()` (L5896-5916)
+### fn `def print_all_help()` (L5897-5917)
 - @brief Render management help, schema-derived values, and sorted aliases.
-- @details O(N) output; retains section order and delegates configuration trees
-to the shared renderer. Reads CONFIG without changing files or state.
+- @details O(N) output; retains section order and delegates the configuration
+tree to the annotated values renderer. Reads CONFIG without changing files
+or state.
 - @return {None} Writes English help to stdout.
 - @satisfies DES-009, REQ-016, REQ-192, REQ-243, REQ-250
 
-### fn `def main(argv=None, *, check_updates: bool = True)` (L5937-6041)
+### fn `def main(argv=None, *, check_updates: bool = True)` (L5938-6042)
 - @brief Execute `main` runtime logic for Git-Alias CLI.
 - @details Executes `main` using deterministic CLI control-flow and explicit error propagation.
 Management dispatch: `--ver`/`--version` prints the installed version
@@ -2892,8 +3081,8 @@ remain opaque arguments. O(N) dispatch plus delegated I/O; no migration.
 |`cmd_changelog`|fn|pub|5754-5791|def cmd_changelog(extra)|
 |`COMMANDS`|var|pub|5794||
 |`print_command_help`|fn|pub|5883-5890|def print_command_help(name, width=None)|
-|`print_all_help`|fn|pub|5896-5916|def print_all_help()|
-|`main`|fn|pub|5937-6041|def main(argv=None, *, check_updates: bool = True)|
+|`print_all_help`|fn|pub|5897-5917|def print_all_help()|
+|`main`|fn|pub|5938-6042|def main(argv=None, *, check_updates: bool = True)|
 
 
 ---

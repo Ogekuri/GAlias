@@ -5889,8 +5889,9 @@ def print_command_help(name, width=None):
 
 
 ## @brief Render management help, schema-derived values, and sorted aliases.
-# @details O(N) output; retains section order and delegates configuration trees
-# to the shared renderer. Reads CONFIG without changing files or state.
+# @details O(N) output; retains section order and delegates the configuration
+# tree to the annotated values renderer. Reads CONFIG without changing files
+# or state.
 # @return {None} Writes English help to stdout.
 # @satisfies DES-009, REQ-016, REQ-192, REQ-243, REQ-250
 def print_all_help():
@@ -5905,7 +5906,7 @@ def print_all_help():
         scope: {key: CONFIG.get(key, spec.default) for key, spec in schema.fields.items()}
         for scope, schema in configuration.SCHEMA.items()
     }
-    print(configuration.render_tree(values))
+    print(configuration.render_values_tree(values))
     print()
     print("Commands:")
     help_width = max(len(name) for name in HELP_TEXTS)

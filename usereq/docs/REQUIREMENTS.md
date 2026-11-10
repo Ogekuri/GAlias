@@ -16,13 +16,14 @@ tags: ["requirements", "srs", "galias"]
 ---
 
 # GAlias CLI Requirements
-**Version**: 1.47
+**Version**: 1.48
 **Author**: Francesco Rolando
 **Date**: 2026-11-10
 
 ## Revision History
 | Date | Version | Change Summary |
 |------|---------|----------------|
+| 2026-11-10 | 1.48 | Expanded the schema-driven configuration CLI with `--print`/`--params` subtree paths, annotated tree rendering with default/custom badges and typed tables, `append`/`insert`/row/cell/map-key path tokens, global auto-initialization, and strict stdout/stderr and exit-code contracts (REQ-097, REQ-245, REQ-250, REQ-251, REQ-252, REQ-254, REQ-257..REQ-274). |
 | 2026-11-10 | 1.47 | Renamed the Italian-derived `foresta.py` module to `forest.py` (CPT-008) and mandated English-only Python identifier naming under `src/` (REQ-256). |
 | 2026-11-10 | 1.46 | Replaced configuration normalization with schema-driven hierarchical CLI management, raw/tree output, typed parameter discovery with input examples, and mandatory CLI synchronization (DES-010, REQ-014, REQ-015, REQ-097, REQ-207, REQ-242..REQ-255). |
 | 2026-11-10 | 1.45 | Indented changelog continuation lines to align with the commit bullet text (REQ-232). |
@@ -262,7 +263,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-094**: MUST the `o` alias MUST execute `git worktree list --verbose` in section 3, MUST execute `git status -sb` only when `WorkingTree` state is not `clean`, and in section 6 MUST normalize the status header line from `## <branch>` to `## <Logical>(⎇ <branch>)` using the same color formatting as section-1 `Current Branch`, and MUST render each non-header status line two-character status prefix in bright red (`\033[31;1m`).
 - **REQ-095**: MUST the section-4 `WorkingTree` node MUST display `WorkingTree [<state>]` where `<state>` is the working-tree state string (`clean`, `unstaged`, `staged`, or `mixed`) derived from the same diagnostic function used by `cmd_o`.
 - **REQ-096**: MUST the `o` alias MUST print section `=== 5. BRANCHES ===` with configured aligned rows for `Work`, `Develop`, `Master`, `RemoteDevelop`, `RemoteMaster`, formatted `<Identifier> | <latest commit subject>`; commit subject text MUST be uncolored and MUST strip ANSI escape sequences before rendering.
-- **REQ-097**: MUST restrict configuration-file mutations to explicit `--set` or `--unset` invocations.
+- **REQ-097**: MUST restrict configuration-file value changes to explicit `--set` or `--unset` invocations plus REQ-272 default initialization.
 - **REQ-098**: MUST the CLI MUST expose an `l` alias in `COMMANDS` and `HELP_TEXTS`, and `--help` outputs MUST include `l` in global and per-command help paths.
 - **REQ-099**: MUST the `l` alias MUST render a text-based tree visualization of git commit history by invoking `git log --date-order` with a custom pretty format and processing the output through a vine-based graph algorithm.
 - **REQ-100**: MUST each `l` output line display columns in fixed order (hash, date `%Y-%m-%d %H:%M`, graph, author, refs, subject), and MUST truncate rendered line length to current terminal width resolved via `shutil.get_terminal_size`.
@@ -349,17 +350,35 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-242**: MUST derive configurable paths, types, descriptions, defaults, allowed values, and input examples from one shared schema covering every DES-006 key.
 - **REQ-243**: MUST expose `--print-raw`, `--print`, `--params`, `--set`, `--unset`, and `--get` as standalone management commands with exact operand validation and command-specific `--help`.
 - **REQ-244**: MUST address configuration using case-sensitive colon-separated paths rooted at `Global` or `Local`, with zero-based array indices and nested object field names.
-- **REQ-245**: MUST implement `--set PATH VALUE` for schema-valid scalar, object, and array values, accepting complex values as one shell-quoted JSON argument.
+- **REQ-245**: MUST implement `--set PATH VALUE` assigning schema-validated scalar, object, array, and map values, casting string arguments to strict schema types and accepting complex values as one JSON argument.
 - **REQ-246**: MUST implement `--get PATH` by printing the selected effective scalar, array, object, or scope as JSON, resolving absent top-level keys from existing defaults.
 - **REQ-247**: MUST implement `--unset PATH` by removing persisted keys, scope contents, array entries, or optional object fields, restoring existing defaults for absent top-level keys.
 - **REQ-248**: MUST reject invalid paths, wrong value types, malformed JSON, invalid rule structures, and unreadable configuration with English diagnostics and non-zero status before mutation.
 - **REQ-249**: MUST implement `--print-raw [Global|Local]` by emitting existing selected files byte-for-byte, global then local, with file identification and missing-file diagnostics exclusively on stderr.
-- **REQ-250**: MUST implement `--print` as an effective-configuration tree grouped by scope, rendering scalar values as plain unquoted text and complex values as box-drawing tables.
-- **REQ-251**: MUST implement `--params` as a schema-derived hierarchy where each field line labels its input type, short description, and one input example, with allowed-value tables when choices are defined.
-- **REQ-252**: MUST document colon paths, zero-based indices, scope selection, unset/default semantics, shell-expanded environment values, and shell-quoted JSON input with application-specific examples in configuration command help.
+- **REQ-250**: MUST implement `--print [PATH]` rendering the effective configuration as a box-drawing tree with an `Application_Configuration` root header omitted from CLI paths, printing the whole tree without PATH and only the PATH subtree otherwise.
+- **REQ-251**: MUST implement `--params [PATH]` rendering the schema-derived parameter hierarchy, printing the whole tree without PATH and only the PATH subtree otherwise.
+- **REQ-252**: MUST document colon paths, zero-based indices, `append`, `insert`, row, cell, and map-key tokens, unset/default semantics, and shell-quoted JSON input with application-specific examples in configuration command help.
 - **REQ-253**: MUST preserve the unselected configuration file and existing alias algorithms during configuration management, including the independent repository-synchronization alias `get`.
-- **REQ-254**: MUST atomically replace the selected configuration file after successful validation, creating its parent directory only for explicit mutations.
+- **REQ-254**: MUST atomically replace the selected configuration file after successful validation by writing a flushed same-directory temporary file and renaming it over the target.
 - **REQ-255**: MUST permit global configuration commands outside repositories and resolve local configuration through the existing repository-root-or-current-directory policy.
+- **REQ-257**: MUST label every `--print` section node with its canonical `[Path: <colon path>]` badge and render every parameter name exactly as its CLI path token.
+- **REQ-258**: MUST annotate every `--print` scalar and selection value with `(default)` when equal to the schema default and `(custom | default: <default>)` otherwise.
+- **REQ-259**: MUST render `--print` selections as `Sel`/`Value` tables marking the active row `[*]` and dynamic maps as `Key`/`Value` tables headed by `(<N> entries | key target: <path>:<Key>)`.
+- **REQ-260**: MUST render `--print` primitive arrays as `Idx`/`Value` tables headed by `(<N> items | row target: <path>:<Idx> | add: :+)`.
+- **REQ-261**: MUST render `--print` object arrays as `Idx`-plus-field tables headed by `(<N> rows | cell target: <path>:<Idx>:<Field> | add: :+)`.
+- **REQ-262**: MUST render empty `--print` arrays as `(empty list — add row with: --set <path>:+ <value>)` and empty maps as `(empty map — set key with: --set <path>:<Key> <value>)`.
+- **REQ-263**: MUST render each `--params` parameter as a `[<type and constraints>] <description>` header line followed by a `Default : <default>` line naming its `--unset` restore command and full-path `--set` example commands.
+- **REQ-264**: MUST render `--params` selections as `Value`/`Default`/`Meaning` tables and object arrays with an `Item Schema` table followed by append, insert, update, reset, replace, delete, overwrite, and clear command examples.
+- **REQ-265**: MUST implement `--set <array path>:append VALUE` (alias `:+`) by validating the item against the array schema, appending it, and printing a confirmation naming the assigned index.
+- **REQ-266**: MUST implement `--set <array path>:insert:<Idx> VALUE` inserting at `<Idx>` with subsequent items shifted down, behaving as append when `<Idx>` equals the array length.
+- **REQ-267**: MUST implement `--set <path>:<Idx>`, `--set <path>:<Idx>:<Field>`, and `--set <path>:<Key>` replacing a whole row, updating one object cell, and adding or updating a map key.
+- **REQ-268**: MUST implement `--get <path>:<Idx>`, `--get <path>:<Idx>:<Field>`, and `--get <path>:<Key>` printing the row, cell, or map value as JSON.
+- **REQ-269**: MUST implement `--unset <path>:<Idx>` deleting the row and re-indexing remaining items contiguously from zero, and `--unset <path>:<Idx>:<Field>` restoring the cell default.
+- **REQ-270**: MUST reject out-of-range `--set` and `--unset` indices with exit status 1 and a stderr error stating the valid index range and the `:append` alternative.
+- **REQ-271**: MUST print an English confirmation line to stdout for every successful `--set` or `--unset` mutation and exit with status 0.
+- **REQ-272**: MUST create the missing global configuration directory tree and `config.json` initialized with schema defaults before executing any configuration command.
+- **REQ-273**: MUST print valid `--get`, `--print`, `--print-raw`, and `--params` output to stdout with exit status 0 and error diagnostics to stderr with exit status 1.
+- **REQ-274**: MUST store and display every configuration value, including credentials and API keys, in plain text without masking across `--print`, `--print-raw`, and `--get`.
 
 ### 3.3 Project File Structure
 ```
@@ -470,3 +489,27 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-240** evidence: `README.md` Prerequisites, GitHub install, and Management Commands sections documenting `--upgrade --force`.
 - **REQ-241** evidence: `src/git_alias/core.py` `VERSION_REPORT_LABEL_WIDTH` constant and `_format_version_report_line` emitting `<label>` left-justified to width 18 followed by `: <version>`, consumed by the `main` `--ver`/`--version` branch for all three REQ-202 lines.
 - **REQ-256** evidence: `src/git_alias/` module inventory (`__init__.py`, `__main__.py`, `core.py`, `configuration.py`, `forest.py`) containing zero Italian-derived identifiers after the `foresta.py` to `forest.py` rename mandated by CPT-008.
+- **REQ-097** evidence: `src/git_alias/configuration.py` `execute` (L998) performing exactly one `write_scope` per `--set`/`--unset` invocation plus the sole `_bootstrap_global` default initialization (L461-474).
+- **REQ-245** evidence: `src/git_alias/configuration.py` `parse_value` (L249-266) casting CLI strings to strict schema types and `validate` (L204-247) rejecting mismatches before persistence.
+- **REQ-250** evidence: `src/git_alias/configuration.py` `render_values_tree` (L719-750) rendering the `Application_Configuration` root header with optional subtree selection and `execute` `--print` routing (L1022-1030).
+- **REQ-251** evidence: `src/git_alias/configuration.py` `render_params_tree` (L871-891) with optional subtree path filtering from `execute` (L1022-1030).
+- **REQ-252** evidence: `src/git_alias/configuration.py` `INPUT_HELP` (L131-164) documenting colon paths, zero-based indices, `append`/`insert`/row/cell/map-key tokens, unset/default semantics, and shell-quoted JSON input.
+- **REQ-254** evidence: `src/git_alias/configuration.py` `write_scope` (L289-315) writing a flushed and fsynced same-directory temporary file renamed over the target.
+- **REQ-257** evidence: `src/git_alias/configuration.py` `_values_node` (L667-717) printing `[Path: ...]` badges and verbatim node names; `_values_map` and `_values_array` carrying the parameter path into target hints.
+- **REQ-258** evidence: `src/git_alias/configuration.py` `_default_note` (L495-507) emitting `(default)` or `(custom | default: <default>)`.
+- **REQ-259** evidence: `src/git_alias/configuration.py` `_values_node` selection branch (L699-708) rendering the Sel/Value table and `_values_map` (L641-665) rendering the entries header and Key/Value table.
+- **REQ-260** evidence: `src/git_alias/configuration.py` `_values_array` (L605-639) primitive-array header `(N items | row target: ...:<Idx> | add: :+)` plus Idx/Value table.
+- **REQ-261** evidence: `src/git_alias/configuration.py` `_values_array` object-array branch (L622-632) header `(N rows | cell target: ...:<Idx>:<Field> | add: :+)` plus Idx-plus-field table.
+- **REQ-262** evidence: `src/git_alias/configuration.py` `_values_array` empty branch (L615-619) and `_values_map` empty branch (L648-652) rendering the copy-pasteable empty hints.
+- **REQ-263** evidence: `src/git_alias/configuration.py` `_params_node` scalar branch (L806-820) with the `[<type and constraints>] <description>` header, `Default :` line, and full-path `Set cmd :` line; `_params_type_label` (L549-569).
+- **REQ-264** evidence: `src/git_alias/configuration.py` `_params_array` (L822-869) Item Schema table plus append/insert/update/reset/replace/delete/overwrite/clear command set and `_params_node` selection Allowed Values table (L782-805).
+- **REQ-265** evidence: `src/git_alias/configuration.py` `_split_set_target` (L443-459) reserving `:append`/`:+`, `_mutate_array` append path (L402-441), and the index-naming confirmation printed by `execute` (L1052-1063).
+- **REQ-266** evidence: `src/git_alias/configuration.py` `_mutate_array` insert branch (L424-436) shifting later items and treating length as append.
+- **REQ-267** evidence: `src/git_alias/configuration.py` `resolve_path` (L178-201) traversing fields, indices, and map keys, plus `change_scope` (L334-374) assigning rows, cells, and map keys.
+- **REQ-268** evidence: `src/git_alias/configuration.py` `execute` `--get` branch (L1032-1036) printing row, cell, and map-key selections from `descend` (L317-332) as JSON.
+- **REQ-269** evidence: `src/git_alias/configuration.py` `change_scope` list-parent deletion (L356-363) compacting indices contiguously and `_unset_confirmation` cell branch (L978-980).
+- **REQ-270** evidence: `src/git_alias/configuration.py` `_array_index` (L376-400) and `_mutate_array` insert bounds (L426-431) raising English out-of-bounds diagnostics carrying the valid range and `:append` hint, converted by `core.py` `main` into stderr plus exit 1.
+- **REQ-271** evidence: `src/git_alias/configuration.py` `_assign_confirmation` (L913-941), `_overwrite_confirmation` (L943-959), and `_unset_confirmation` (L961-996) printed by `execute` after each successful mutation.
+- **REQ-272** evidence: `src/git_alias/configuration.py` `_bootstrap_global` (L461-474) invoked first in `execute` (L1003) writing schema defaults atomically when `config.json` is missing.
+- **REQ-273** evidence: `src/git_alias/core.py` `main` (L5938-6041) catching configuration failures and printing `Configuration error: ...` to stderr with `sys.exit(1)` while `configuration.execute` writes valid output to stdout.
+- **REQ-274** evidence: `src/git_alias/configuration.py` `_scalar_text` (L476-493) rendering every value unmasked and `print_raw` (L893-911) emitting exact stored bytes.
