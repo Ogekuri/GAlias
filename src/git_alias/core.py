@@ -129,6 +129,14 @@ VERSION_ERROR_COLOR = "\033[31;1m"
 ## @brief Constant `ANSI_COLOR_RESET` used by CLI runtime paths and policies.
 ANSI_COLOR_RESET = "\033[0m"
 
+## @brief Label field width aligning the `--ver`/`--version` report colon separator.
+# @details Every `--ver`/`--version` report line left-justifies its label in this
+#          many characters before appending `: <version>` (REQ-241); 18 characters
+#          fit the longest label `Current Installed` (17 characters) plus one
+#          separating blank so every `: ` separator aligns at column 20.
+# @satisfies REQ-241
+VERSION_REPORT_LABEL_WIDTH = 18
+
 ## @brief Constant `DEFAULT_VER_RULES` used by CLI runtime paths and policies.
 
 DEFAULT_VER_RULES = [
@@ -332,6 +340,22 @@ def _normalize_semver_text(text: str) -> str:
     if value.lower().startswith("v"):
         value = value[1:]
     return value
+
+
+## @brief Format one `--ver`/`--version` report line with an aligned label column.
+# @details Left-justifies `label` in a `VERSION_REPORT_LABEL_WIDTH`-character field
+#          and appends `: ` plus `version_text`, implementing the REQ-241 contract
+#          `<label>: <version>` with every `: ` separator aligned across the three
+#          `--ver`/`--version` report lines. Pure function: performs no I/O,
+#          mutates no state, and never raises for string inputs.
+# @param label {str} Report label: `Current Installed`, `Latest @ PyPI`, or `Latest @ GitHub`.
+# @param version_text {str} Version text or degraded value (`unavailable`, `unknown (<reason>)`).
+# @return {str} REQ-241-aligned report line `<label padded to 18>: <version_text>`.
+# @note Complexity: O(len(label) + len(version_text)).
+# @see check_for_newer_version, _fetch_github_latest_version
+# @satisfies REQ-241
+def _format_version_report_line(label: str, version_text: str) -> str:
+    return f"{label:<{VERSION_REPORT_LABEL_WIDTH}}: {version_text}"
 
 
 ## @brief Emit the standardized bright-green update warning for newer available versions.
@@ -6035,7 +6059,10 @@ def print_all_help():
 ## @brief Execute `main` runtime logic for Git-Alias CLI.
 # @details Executes `main` using deterministic CLI control-flow and explicit error propagation.
 #          Management dispatch: `--ver`/`--version` prints the installed version
-#          plus the latest PyPI and GitHub versions (REQ-202); `--upgrade`
+#          plus the latest PyPI and GitHub versions as three REQ-241-aligned
+#          `Current Installed`/`Latest @ PyPI`/`Latest @ GitHub` lines (REQ-202);
+#          the GitHub failure path renders the REQ-241 `Latest @ GitHub` line
+#          with `unknown (<reason>)` value (REQ-230); `--upgrade`
 #          selects the PyPI default source or the GitHub source via
 #          `--develop` (equivalent `--dev`) (REQ-001, REQ-201) and rejects
 #          `--develop`/`--dev` outside `--upgrade`/`major`/`minor`/`patch`
@@ -6045,7 +6072,7 @@ def print_all_help():
 # @param argv Input parameter consumed by `main`.
 # @param check_updates Input parameter consumed by `main`.
 # @return Result emitted by `main` according to command contract.
-# @satisfies REQ-001, REQ-030, REQ-201, REQ-202, REQ-203, REQ-230, REQ-238
+# @satisfies REQ-001, REQ-030, REQ-201, REQ-202, REQ-203, REQ-230, REQ-238, REQ-241
 def main(argv=None, *, check_updates: bool = True):
     args = list(argv) if argv is not None else sys.argv[1:]
     force_online_update_check = bool(args) and args[0] in ("--ver", "--version")
@@ -6086,12 +6113,15 @@ def main(argv=None, *, check_updates: bool = True):
         github_latest_version, github_failure_reason = _fetch_github_latest_version(
             timeout_seconds=VERSION_CHECK_TIMEOUT_SECONDS
         )
-        print(get_cli_version())
-        print(f"PyPI latest: {pypi_latest_version or 'unavailable'}")
+        installed_version = get_cli_version()
+        pypi_report_value = pypi_latest_version or "unavailable"
+        print(_format_version_report_line("Current Installed", installed_version))
+        print(_format_version_report_line("Latest @ PyPI", pypi_report_value))
         if github_latest_version:
-            print(f"GitHub latest: {github_latest_version}")
+            print(_format_version_report_line("Latest @ GitHub", github_latest_version))
         else:
-            print(f"GitHub latest: unknown ({github_failure_reason or 'unavailable'})")
+            github_report_value = f"unknown ({github_failure_reason or 'unavailable'})"
+            print(_format_version_report_line("Latest @ GitHub", github_report_value))
         return
     if args[0] == "--write-config":
         write_default_config(git_root)

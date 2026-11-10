@@ -156,15 +156,17 @@ class AliasHelpTest(unittest.TestCase):
                 fetch_github.assert_called_once()
                 self.assertEqual(
                     stdout.strip(),
-                    f"{version}\nPyPI latest: 9.9.9\nGitHub latest: 9.9.8",
+                    f"Current Installed : {version}\n"
+                    f"Latest @ PyPI     : 9.9.9\n"
+                    f"Latest @ GitHub   : 9.9.8",
                 )
 
     ## @brief Verify unavailable remote sources render as unavailable (REQ-202, REQ-230, REQ-231).
     # @details Mock the PyPI fetcher returning None and the GitHub fetcher
     #          returning no version plus the intercepted failure reason; the
     #          installed version line stays first, the PyPI line degrades
-    #          deterministically, and the GitHub line renders
-    #          `GitHub latest: unknown (<reason>)`.
+    #          deterministically, and the GitHub line renders the REQ-241-aligned
+    #          `Latest @ GitHub   : unknown (<reason>)` degradation.
     # @param self {AliasHelpTest} Isolated test instance.
     # @return {None} Assert REQ-202/REQ-230/REQ-231 degraded output.
     def test_global_version_flags_report_unavailable_sources(self):
@@ -181,8 +183,9 @@ class AliasHelpTest(unittest.TestCase):
             _, stdout, _ = self.run_script_result(["--ver"], check=True)
         self.assertEqual(
             stdout.strip(),
-            f"{version}\nPyPI latest: unavailable"
-            f"\nGitHub latest: unknown ({github_failure_reason})",
+            f"Current Installed : {version}\n"
+            f"Latest @ PyPI     : unavailable"
+            f"\nLatest @ GitHub   : unknown ({github_failure_reason})",
         )
 
     def test_global_version_flags_force_online_update_check(self):
