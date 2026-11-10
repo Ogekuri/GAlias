@@ -168,7 +168,7 @@
                 - `_find_windows_shell_script_path(...)`: scan `PATH` for non-`PATHEXT` shell-script launchers such as `gitk` [`src/git_alias/core.py`]
           - `run_command(...)`: execute resolved external command [`src/git_alias/core.py`]
         - `cmd_ar(...)`: archive flow combining `git archive` and `gzip` [`src/git_alias/core.py`]
-        - `cmd_l(...)`: delegate text-graph rendering to `foresta.run(...)` [`src/git_alias/core.py`]
+        - `cmd_l(...)`: delegate text-graph rendering to `forest.run(...)` [`src/git_alias/core.py`]
         - `cmd_dc(...)`, `cmd_dcc(...)`, `cmd_dccc(...)`, `cmd_dw(...)`, `cmd_dwc(...)`, `cmd_dwcc(...)`, `cmd_dcd(...)`, `cmd_dcm(...)`, and `cmd_ddm(...)`: validate diff operands and delegate to `git difftool` with the configured tool override [`src/git_alias/core.py`]
           - `_run_configured_diff(...)`: build the `git difftool -d` argv, inject the environment-selected diff command as `--extcmd`, and append ordered ref operands [`src/git_alias/core.py`]
             - `_selected_diff_command_parts(...)`: select `diff_command` or `diff_command_gfx` per detected environment; empty selection skips the override [`src/git_alias/core.py`]

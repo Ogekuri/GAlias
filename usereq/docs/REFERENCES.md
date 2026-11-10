@@ -7,7 +7,7 @@
         ├── __main__.py
         ├── configuration.py
         ├── core.py
-        └── foresta.py
+        └── forest.py
 ```
 
 # __init__.py | Python | 13L | 0 symbols | 1 imports | 7 comments
@@ -263,7 +263,7 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 from git_alias import configuration
-from git_alias import foresta
+from git_alias import forest
 ```
 
 ## Definitions
@@ -2257,11 +2257,11 @@ used by section-1 current-branch output, and preserves all other lines.
 
 ### fn `def cmd_l(extra)` (L5178-5184)
 - @brief Execute `cmd_l` runtime logic for Git-Alias CLI.
-- @details Delegates to `foresta.run()` which renders a text-based tree visualization
+- @details Delegates to `forest.run()` which renders a text-based tree visualization
 of git commit history using a vine-based graph algorithm with configurable styles,
 symbols, colors, and margins. Injects `-n 25` only when invoked without
 user arguments; otherwise forwards provided arguments unchanged.
-- @param extra {list} Additional CLI arguments forwarded to the foresta engine.
+- @param extra {list} Additional CLI arguments forwarded to the forest engine.
 - @return None.
 - @satisfies REQ-098, REQ-099, REQ-111
 
@@ -2898,8 +2898,8 @@ remain opaque arguments. O(N) dispatch plus delegated I/O; no migration.
 
 ---
 
-# foresta.py | Python | 1639L | 34 symbols | 8 imports | 349 comments
-> Path: `src/git_alias/foresta.py`
+# forest.py | Python | 1639L | 34 symbols | 8 imports | 349 comments
+> Path: `src/git_alias/forest.py`
 
 ## Imports
 ```

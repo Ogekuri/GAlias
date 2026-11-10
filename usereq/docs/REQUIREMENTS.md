@@ -16,13 +16,14 @@ tags: ["requirements", "srs", "galias"]
 ---
 
 # GAlias CLI Requirements
-**Version**: 1.46
+**Version**: 1.47
 **Author**: Francesco Rolando
 **Date**: 2026-11-10
 
 ## Revision History
 | Date | Version | Change Summary |
 |------|---------|----------------|
+| 2026-11-10 | 1.47 | Renamed the Italian-derived `foresta.py` module to `forest.py` (CPT-008) and mandated English-only Python identifier naming under `src/` (REQ-256). |
 | 2026-11-10 | 1.46 | Replaced configuration normalization with schema-driven hierarchical CLI management, raw/tree output, typed parameter discovery with input examples, and mandatory CLI synchronization (DES-010, REQ-014, REQ-015, REQ-097, REQ-207, REQ-242..REQ-255). |
 | 2026-11-10 | 1.45 | Indented changelog continuation lines to align with the commit bullet text (REQ-232). |
 | 2026-11-10 | 1.44 | Aligned `--ver`/`--version` report output so the installed, PyPI, and GitHub version lines render 18-character left-justified labels followed by `: <version>` (REQ-202, REQ-230, REQ-241). |
@@ -106,7 +107,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **CPT-005**: MUST invoke external executables `git`, `gitk`, and Astral `uv` (including `uvx` and `uv run`) for delegated operations.
 - **CPT-006**: MUST use `pathspec` for gitignore-style pattern matching in version rules processing.
 - **CPT-007**: MAY include repository-local Doxygen launcher assets; runtime behavior MUST NOT depend on documentation-generation scripts.
-- **CPT-008**: MUST include `src/git_alias/foresta.py` implementing text-based commit tree visualization.
+- **CPT-008**: MUST include `src/git_alias/forest.py` implementing text-based commit tree visualization.
 
 ## 3. Software Requirements
 ### 3.1 Design and Implementation
@@ -342,6 +343,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-229**: MUST gate `build-release` on successful completion of `test-release` via `needs` so failed tests skip build, attestation, GitHub Release, and PyPI publication.
 - **REQ-224**: MUST print one `--- [pre-release-check] <message> ---` English progress line per step plus a final success line.
 - **REQ-225**: MUST abort at the first failing step with non-zero exit status and skip all subsequent steps.
+- **REQ-256**: MUST define every Python module, package, class, function, variable, and constant name under `src/` using English tokens without Italian-derived identifiers.
 
 ### 3.2.1 Configuration Command Interface
 - **REQ-242**: MUST derive configurable paths, types, descriptions, defaults, allowed values, and input examples from one shared schema covering every DES-006 key.
@@ -377,7 +379,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 │       ├── __init__.py
 │       ├── __main__.py
 │       ├── core.py
-│       └── foresta.py
+│       └── forest.py
 ├── tests/
 ├── pyproject.toml
 ├── README.md
@@ -386,7 +388,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 
 ### 3.4 Component Organization
 - `core.py` implements dispatch, command handlers, config loading/writing, git subprocess wrappers, and release/changelog flows.
-- `foresta.py` implements vine-based text tree rendering for git history (`l` alias).
+- `forest.py` implements vine-based text tree rendering for git history (`l` alias).
 - `release-pypi.yml` implements manual-or-tag-triggered CI release build, GitHub Release publication, and PyPI OIDC Trusted Publishing; tag commits contained in `origin/master` or `origin/develop` run the release workflow, and only master-contained tag commits publish to PyPI (REQ-205, REQ-206). Release automation executes on the GitHub Actions Node24 runner generation without Node20 opt-out overrides (REQ-211, REQ-212, REQ-213). A `test-release` job runs lock synchronization and the complete pytest suite before the gated `build-release` job, so failed tests prevent release artifacts and any publication (REQ-228, REQ-229).
 - `scripts/pre-release-check.sh` implements the repository-local official-release pre-validation flow: prerequisite checks, lockfile synchronization check, full pytest execution, temporary-directory distribution build, and post-run artifact cleanup (REQ-217..REQ-227).
 - No explicit performance optimizations identified.
@@ -467,3 +469,4 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-239** evidence: `src/git_alias/core.py` `MANAGEMENT_HELP` `--upgrade` entry documenting the `--force` forced download and complete reinstallation.
 - **REQ-240** evidence: `README.md` Prerequisites, GitHub install, and Management Commands sections documenting `--upgrade --force`.
 - **REQ-241** evidence: `src/git_alias/core.py` `VERSION_REPORT_LABEL_WIDTH` constant and `_format_version_report_line` emitting `<label>` left-justified to width 18 followed by `: <version>`, consumed by the `main` `--ver`/`--version` branch for all three REQ-202 lines.
+- **REQ-256** evidence: `src/git_alias/` module inventory (`__init__.py`, `__main__.py`, `core.py`, `configuration.py`, `forest.py`) containing zero Italian-derived identifiers after the `foresta.py` to `forest.py` rename mandated by CPT-008.

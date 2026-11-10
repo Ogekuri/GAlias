@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-## @file foresta.py
+## @file forest.py
 # @brief Text-based tree visualization engine for git commit history.
 # @details Implements a vine-based graph algorithm that renders commit history
 # as a Unicode tree with configurable styles, symbols, colors, and margins.

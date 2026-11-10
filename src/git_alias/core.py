@@ -5168,18 +5168,18 @@ def cmd_str(extra):
 
 
 ## @brief Execute `cmd_l` runtime logic for Git-Alias CLI.
-# @details Delegates to `foresta.run()` which renders a text-based tree visualization
+# @details Delegates to `forest.run()` which renders a text-based tree visualization
 # of git commit history using a vine-based graph algorithm with configurable styles,
 # symbols, colors, and margins. Injects `-n 25` only when invoked without
 # user arguments; otherwise forwards provided arguments unchanged.
 # @satisfies REQ-098, REQ-099, REQ-111
-# @param extra {list} Additional CLI arguments forwarded to the foresta engine.
+# @param extra {list} Additional CLI arguments forwarded to the forest engine.
 # @return None.
 def cmd_l(extra):
-    from git_alias import foresta
+    from git_alias import forest
 
     args = list(extra) if extra else ["-n", "25"]
-    foresta.run(args)
+    forest.run(args)
 
 
 ## @brief Execute `cmd_lb` runtime logic for Git-Alias CLI.

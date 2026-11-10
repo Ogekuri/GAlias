@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
   push:
     tags:
-      - 'v[0-9]+.[0-9]+.[0-9]+' # push di una versione canonica (es. v1.2.3) senza pre-release
+      - 'v[0-9]+.[0-9]+.[0-9]+' # push of a canonical release tag (e.g. v1.2.3) without pre-release suffix
 
 permissions:
   contents: write
@@ -12,7 +12,7 @@ permissions:
   attestations: write
 
 jobs:
-  # 1. Controlla se siamo sul branch corretto
+  # 1. Check whether the tag commit is on a permitted branch
   check-branch:
     runs-on: ubuntu-latest
     outputs:
@@ -72,10 +72,10 @@ jobs:
       - name: Run the full test suite
         run: uv run pytest
 
-  # 3. Effetua la build
+  # 3. Build the release distributions
   build-release:
     needs: [check-branch, test-release]
-    # Esegue questo job SOLO se l'output del job precedente è 'true'
+    # Run this job ONLY when the previous job output is 'true'
     if: needs.check-branch.outputs.is_release == 'true'
     runs-on: ubuntu-latest
 
