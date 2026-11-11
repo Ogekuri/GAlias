@@ -1,7 +1,41 @@
 # Changelog
 
-## [0.51.2](https://github.com/Ogekuri/GAlias/compare/v0.51.0..v0.51.2) - 2026-11-10
+## [0.52.0](https://github.com/Ogekuri/GAlias/compare/v0.51.0..v0.52.0) - 2026-11-11
+### 🐛  Bug Fixes
+- narrow Optional section before assertIn [useReq] *(test_changelog_command)*
+Add assertIsNotNone plus assert-based narrowing so Pyright accepts the Optional[str] return of generate_section_for_range inside assertIn, matching the sibling test pattern; assertions and covered behavior unchanged.
+Refresh REFERENCES.md declaration line ranges through the references-generation tool.
+
 ### 🚜  Changes
+- rename --params command to --info [useReq] *(configuration)*
+Rename the configuration documentation management command to --info; Update module docstring, COMMAND_HELP, INPUT_HELP and renderer documentation; Update configuration and alias-help test expectations; Align README, SRS requirements REQ-243/251/263/264/273/275/276/278, WORKFLOW and REFERENCES
+- render --print and --params trees with fixed depth indentation [useReq] *(configuration)*
+Replace name-length-driven padding with fixed four-character depth prefixes; Render Default, Set cmd, tables, Full overwrite and Reset block as tree children; Nest child parameters and tables exactly one level below their owning node; Update SRS requirements REQ-275..REQ-279, WORKFLOW call traces, REFERENCES
+- BREAKING CHANGE: annotated config CLI with subtree prints, array tokens, auto-init [useReq] *(configuration)*
+REQUIREMENTS v1.48: add REQ-257..REQ-274 covering annotated --print and
+--params rendering, reserved append/insert/row/cell/map-key tokens,
+out-of-bounds diagnostics, confirmations, global auto-initialization,
+stream/exit-code contract, and plain-text display; update REQ-097,
+REQ-245, REQ-250, REQ-251, REQ-252, and REQ-254.
+configuration.py: replace render_tree with render_values_tree and
+render_params_tree (badges, default/custom notes, Sel/Key/Idx tables,
+empty-collection hints, item-schema tables); add :append/:+/:insert
+mutations with re-indexing, valid-range bounds errors, English
+confirmations, and atomic global bootstrap; no legacy support.
+core.py: print_all_help delegates to render_values_tree.; tests: adapt test_config_io to the new contracts and add array
+lifecycle, bounds, bootstrap, subtree, and params coverage.
+- BREAKING CHANGE: translate Italian workflow comments and rename foresta to forest [useReq] *(core)*
+Translate the four Italian comments in release-pypi.yml to English with no
+change to triggers, gates, steps, or publication behavior.
+Rename src/git_alias/foresta.py to forest.py (CPT-008); update core.py cmd_l
+delegation and mechanical test import paths (REQ-256 English-only naming).
+Update SRS to v1.47 (CPT-008 rename, REQ-256), regenerate REFERENCES.md, and
+align the WORKFLOW.md cmd_l call-trace node.
+Verification: uv run pytest 462 passed, 1 skipped, 132 subtests passed;
+static-check clean.
+- BREAKING CHANGE: hierarchical config CLI replaces --write-config [useReq] *(configuration)*
+Add schema-driven management commands --print-raw, --print, --params, --set, --unset, --get with colon paths, typed discovery lines, plain-text tree output, and atomic scope persistence (DES-010, REQ-014, REQ-015, REQ-097, REQ-207, REQ-242..REQ-255). Remove the legacy --write-config writer without migration; keep all alias algorithms unchanged. Update requirements, workflow, references, README, and configuration tests.
+- indent multiline commit entries [useReq] *(changelog)*
 - align --ver/--version output to REQ-241 label format [useReq] *(version-report)*
 REQUIREMENTS.md v1.44: add REQ-241 aligned 18-character label-field
 format; update REQ-202 and REQ-230 to render the three-line report
@@ -916,7 +950,7 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 - \[0.49.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.49.0
 - \[0.50.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.50.0
 - \[0.51.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.51.0
-- \[0.51.2\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.51.2
+- \[0.52.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.0
 
 [0.1.0]: https://github.com/Ogekuri/GAlias/releases/tag/v0.1.0
 [0.2.0]: https://github.com/Ogekuri/GAlias/compare/v0.1.0..v0.2.0
@@ -969,4 +1003,4 @@ Co-Authored-By: Claude Sonnet 4.6 <noreply@anthropic.com>
 [0.49.0]: https://github.com/Ogekuri/GAlias/compare/v0.48.0..v0.49.0
 [0.50.0]: https://github.com/Ogekuri/GAlias/compare/v0.49.0..v0.50.0
 [0.51.0]: https://github.com/Ogekuri/GAlias/compare/v0.50.0..v0.51.0
-[0.51.2]: https://github.com/Ogekuri/GAlias/compare/v0.51.0..v0.51.2
+[0.52.0]: https://github.com/Ogekuri/GAlias/compare/v0.51.0..v0.52.0
