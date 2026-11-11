@@ -1,148 +1,98 @@
-"""HDT unit tests for the `scripts/pre-release-check.sh` release pre-validation script.
+"""HDT unit tests for the `scripts/pre-release-check.sh` release-readiness script.
 
-HDT artifacts (Generator mode):
+HDT artifacts (Refactorer mode):
 
+- Audit: the previous suite executed the script against the real repository
+  root with fake `git`/`uv` shims, so script side effects (cache and artifact
+  removal) reached real user paths and coupled the suite to repository
+  state. The suite now runs script copies inside a throwaway git sandbox.
 - UUT list:
   - `scripts/pre-release-check.sh` script contract (Level 0, static:
     presence, executable permission, Bash syntax)
-  - `scripts/pre-release-check.sh` end-to-end step flow (Level 1, subprocess
-    with fake `git` and `uv` executables)
+  - `scripts/pre-release-check.sh` prerequisite and guard steps (Level 1,
+    subprocess in a sandbox repository)
+  - `scripts/pre-release-check.sh` full step flow, cleanup, and integrity
+    verification (Level 2, subprocess composing `scripts/build.sh`)
 - Call graph: `pre-release-check.sh` -> `git --version`, `uv --version`,
-  `uv lock --check`, `uv run pytest`, `uv build --out-dir <temporary dir>`.
-- External dependencies to isolate: `git` and `uv` executables replaced by
-  deterministic fake shims capturing argv payloads; execution working
-  directory moved outside the repository.
-- Test matrix: script presence/permission (REQ-217), Bash syntax validity
-  (REQ-217), cwd-independent repository-root resolution (REQ-218),
-  prerequisite and step invocation sequence (REQ-219, REQ-220, REQ-221,
-  REQ-222), temporary build directory cleanup (REQ-223), progress and
-  success output format (REQ-224), fail-fast abort on the first failing
-  step (REQ-225), removal of build and intermediate validation artifacts
-  left by the build step (REQ-226), abort when `git` is missing from PATH
-  (REQ-219).
+  `validate_repository_structure`, `check_shell_syntax`,
+  `check_preexisting_artifacts` -> `build.sh --list-artifacts`,
+  `record_baseline`, `uv lock --check`, `uv run python` checks,
+  `uv run pytest`, `build.sh`, artifact validation steps, `on_exit` ->
+  `cleanup_generated_artifacts` -> `build.sh --clean`,
+  `verify_repository_integrity`.
+- External dependencies to isolate: `uv` replaced by a deterministic fake;
+  repository replaced by a temporary git sandbox; `HOME`, `TMPDIR`, and git
+  configuration redirected to temporary paths; process interruption
+  synchronized through a FIFO instead of timing.
+- Test matrix: script contract (REQ-217); full step sequence, progress
+  output, and zero residue from a foreign working directory (REQ-218,
+  REQ-220, REQ-221, REQ-222, REQ-224, REQ-226, REQ-227, REQ-300);
+  preservation of pre-existing content (REQ-223, REQ-227, REQ-298);
+  fail-fast on the first failing step (REQ-219, REQ-225); missing `git`
+  and missing `uv` (REQ-219); pre-existing artifact guard (REQ-290);
+  failing tests, failing build, and missing artifact with cleanup
+  (REQ-225, REQ-226, REQ-299); leftover file, modified tracked file, and
+  tracked cleanup target (REQ-288, REQ-298, REQ-299); signal interruption
+  (REQ-297).
+- Execution plan: CI runs the suite through `uv run pytest`; developers
+  run `uv run pytest tests/test_pre_release_check.py`.
 """
 
 import os
+import select
 import shutil
+import signal
 import stat
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
 
+from release_scripts_support import REPO_ROOT, create_sandbox, write_executable
+
 
 ## @brief Test suite for the pre-release validation Bash script.
-# @details Validates script contract, step ordering, cwd-independent root
-#          resolution, temporary-build cleanup, progress output format, and
-#          fail-fast abort semantics via deterministic executable shims.
-# @satisfies REQ-217, REQ-218, REQ-219, REQ-220, REQ-221, REQ-222, REQ-223, REQ-224, REQ-225
+# @details Validates the script contract, step ordering, cwd-independent
+#          root resolution, fail-fast semantics, guaranteed cleanup,
+#          repository-integrity verification, and signal handling inside
+#          hermetic sandbox repositories.
+# @satisfies REQ-217, REQ-218, REQ-219, REQ-220, REQ-221, REQ-222, REQ-223, REQ-224, REQ-225, REQ-226, REQ-227, REQ-288, REQ-290, REQ-297, REQ-298, REQ-299, REQ-300
 class PreReleaseCheckScriptTest(unittest.TestCase):
-    ## @brief Repository root path used to locate the script under test.
-    REPO_ROOT = Path(__file__).resolve().parents[1]
-    ## @brief Absolute path of the pre-release-check script under test.
+    ## @brief Absolute path of the real pre-release-check script under test.
     SCRIPT_PATH = REPO_ROOT / "scripts" / "pre-release-check.sh"
+    ## @brief Script filename inside sandbox repositories.
+    SCRIPT_NAME = "pre-release-check.sh"
 
-    ## @brief Write an executable shell helper file.
-    # @param path {Path} Destination executable path.
-    # @param content {str} Script body text encoded as UTF-8.
+    ## @brief Assert a failed run left the sandbox without generated residue.
+    # @param sandbox {ReleaseSandbox} Sandbox inspected after the run.
     # @return None.
-    @staticmethod
-    def _write_executable(path: Path, content: str) -> None:
-        path.write_text(content, encoding="utf-8")
-        path.chmod(path.stat().st_mode | stat.S_IXUSR)
+    def _assert_sandbox_clean(self, sandbox) -> None:
+        self.assertEqual(sandbox.untracked_files(), [])
+        self.assertEqual(sandbox.git("status", "--porcelain"), "")
+        self.assertFalse((sandbox.repo / "dist").exists())
+        self.assertFalse((sandbox.repo / ".venv").exists())
+        self.assertEqual(sandbox.temp_entries(), [])
 
-    ## @brief Build fake `git` and `uv` executables plus an isolated PATH env.
-    # @details The fake `uv` appends one argv block per invocation to
-    #          `$UV_CAPTURE_FILE` separated by `--STEP--` markers and fails
-    #          its first invocation only when `$UV_FAIL_FIRST` is set.
-    # @param temp_root {Path} Directory receiving `bin/` and capture files.
-    # @param include_git {bool} When True, a fake `git` shim is provided.
-    # @param minimal_path {bool} When True, PATH contains only `fake_bin` and
-    #        coreutil shims (`dirname`, `mktemp`, `rm`) are provided so the
-    #        script reaches the `git` prerequisite step.
-    # @return Tuple `(env, capture_path)` with the isolated environment and
-    #         the uv argv capture file path.
-    def _make_fake_environment(self, temp_root: Path, include_git: bool = True, minimal_path: bool = False):
-        fake_bin = temp_root / "bin"
-        fake_bin.mkdir()
-        capture_path = temp_root / "uv-args.txt"
-        fake_uv = fake_bin / "uv"
-        self._write_executable(
-            fake_uv,
-            "#!/bin/sh\n"
-            "{\n"
-            "  printf '%s\\n' \"$@\"\n"
-            "  printf '%s\\n' '--STEP--'\n"
-            "} >> \"$UV_CAPTURE_FILE\"\n"
-            "if [ -n \"${UV_FAIL_FIRST:-}\" ] && [ ! -e \"$UV_FAIL_MARKER\" ]; then\n"
-            "  : > \"$UV_FAIL_MARKER\"\n"
-            "  exit 1\n"
-            "fi\n"
-            "if [ \"$1\" = \"build\" ]; then\n"
-            "  mkdir -p \"$PWD/build/nested\" \"$PWD/src/fake.egg-info\" \"$PWD/.pytest_cache\" \"$PWD/src/git_alias/__pycache__\"\n"
-            "  : > \"$PWD/build/nested/residue.bin\"\n"
-            "  : > \"$PWD/src/fake.egg-info/PKG-INFO\"\n"
-            "  : > \"$PWD/.pytest_cache/cache.db\"\n"
-            "  : > \"$PWD/src/git_alias/__pycache__/module.cpython-311.pyc\"\n"
-            "fi\n"
-            "exit 0\n",
-        )
-        if include_git:
-            fake_git = fake_bin / "git"
-            self._write_executable(fake_git, "#!/bin/sh\nexit 0\n")
-        if minimal_path:
-            self._write_executable(
-                fake_bin / "dirname",
-                "#!/bin/sh\nprintf '%s\\n' \"${1%/*}\"\nexit 0\n",
-            )
-            self._write_executable(
-                fake_bin / "mktemp",
-                "#!/bin/sh\nprintf '%s\\n' \"$MKTEMP_DIR\"\nexit 0\n",
-            )
-            self._write_executable(fake_bin / "rm", "#!/bin/sh\nexit 0\n")
-
-        env = os.environ.copy()
-        # Isolation: BASH_ENV would re-source a user rc file inside the
-        # non-interactive script bash, defeating fake-bin PATH injection.
-        env.pop("BASH_ENV", None)
-        if minimal_path:
-            env["PATH"] = fake_bin.as_posix()
-            env["MKTEMP_DIR"] = str(temp_root / "build-out")
-        else:
-            env["PATH"] = f"{fake_bin.as_posix()}:{env.get('PATH', '')}"
-        env["UV_CAPTURE_FILE"] = str(capture_path)
-        env["UV_FAIL_MARKER"] = str(temp_root / "uv-fail-marker")
-        return env, capture_path
-
-    ## @brief Split captured uv argv blocks into per-invocation lists.
-    # @param capture_path {Path} Capture file written by the fake `uv` shim.
-    # @return {list[list[str]]} One argv list per `uv` invocation.
-    @staticmethod
-    def _split_uv_invocations(capture_path: Path) -> list:
-        lines = capture_path.read_text(encoding="utf-8").splitlines()
-        invocations = []
-        current = []
-        for line in lines:
-            if line == "--STEP--":
-                invocations.append(current)
-                current = []
-            else:
-                current.append(line)
-        return invocations
-
-    ## @brief Run the script with the given environment and working directory.
-    # @param env {dict} Environment mapping passed to the subprocess.
-    # @param cwd {Path} Working directory for the script invocation.
-    # @return CompletedProcess with captured stdout/stderr as text.
-    def _run_script(self, env, cwd: Path):
-        return subprocess.run(
-            ["bash", str(self.SCRIPT_PATH)],
-            cwd=str(cwd),
-            env=env,
-            capture_output=True,
-            text=True,
-            check=False,
-        )
+    ## @brief Run the script with a failing fake `uv` step and assert cleanup.
+    # @param overrides {dict[str, str]} Fake `uv` behavior switches.
+    # @param failed_step {str} Expected failed step description.
+    # @return {ReleaseSandbox-bound list} Fake `uv` invocations of the run.
+    def _assert_step_failure_with_cleanup(self, overrides: dict, failed_step: str) -> list:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # Arrange
+            sandbox = create_sandbox(Path(tmp_dir))
+            env = dict(sandbox.env, **overrides)
+            # Act
+            completed = sandbox.run(self.SCRIPT_NAME, env=env)
+            # Assert
+            self.assertEqual(completed.returncode, 1, msg=completed.stderr)
+            self.assertIn(f"--- [pre-release-check] Step failed: {failed_step} ---", completed.stderr)
+            self.assertIn(f"--- [pre-release-check] Result: FAILED ({failed_step}) ---", completed.stderr)
+            self.assertNotIn("All pre-release checks passed", completed.stdout)
+            self.assertNotIn("Result: PASSED", completed.stdout)
+            self.assertIn("--- [pre-release-check] Clean up generated artifacts ---", completed.stdout)
+            self._assert_sandbox_clean(sandbox)
+            return sandbox.uv_invocations()
 
     ## @brief Verify the script exists with the executable permission bit.
     # @return None.
@@ -175,102 +125,44 @@ class PreReleaseCheckScriptTest(unittest.TestCase):
         # Assert
         self.assertEqual(completed.returncode, expected_returncode, msg=completed.stderr)
 
-    ## @brief Verify full step sequence, cleanup, and output from any cwd.
-    # @details Executes the script from a temporary working directory with
-    #          fake `git`/`uv` shims, asserting the exact invocation order
-    #          (`uv --version`, `uv lock --check`, `uv run pytest`,
-    #          `uv build --out-dir`), removal of the temporary build
-    #          directory and every build/intermediate residue artifact at
-    #          exit, and canonical progress plus success lines.
-    # @return None.
-    # @satisfies REQ-218, REQ-219, REQ-220, REQ-221, REQ-222, REQ-223, REQ-224, REQ-226
-    def test_script_executes_full_step_sequence_from_any_working_directory(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            # Arrange
-            temp_root = Path(tmp_dir)
-            env, capture_path = self._make_fake_environment(temp_root)
-            outside_cwd = temp_root / "elsewhere"
-            outside_cwd.mkdir()
-            # Act
-            completed = self._run_script(env, outside_cwd)
-            # Assert
-            self.assertEqual(completed.returncode, 0, msg=completed.stderr)
-            invocations = self._split_uv_invocations(capture_path)
-            self.assertEqual(len(invocations), 4)
-            self.assertEqual(invocations[0], ["--version"])
-            self.assertEqual(invocations[1], ["lock", "--check"])
-            self.assertEqual(invocations[2], ["run", "pytest"])
-            self.assertEqual(invocations[3][0], "build")
-            self.assertEqual(invocations[3][1], "--out-dir")
-            build_dir = Path(invocations[3][2])
-            self.assertTrue(build_dir.name.startswith("tmp"))
-            self.assertFalse(build_dir.exists())
-            self.assertFalse((self.REPO_ROOT / "build").exists())
-            self.assertFalse((self.REPO_ROOT / "src" / "fake.egg-info").exists())
-            self.assertFalse((self.REPO_ROOT / ".pytest_cache").exists())
-            self.assertFalse(
-                (self.REPO_ROOT / "src" / "git_alias" / "__pycache__").exists()
-            )
-            self.assertIn("--- [pre-release-check] Check git availability ---", completed.stdout)
-            self.assertIn("--- [pre-release-check] Check uv availability ---", completed.stdout)
-            self.assertIn(
-                "--- [pre-release-check] Check dependency lock synchronization ---",
-                completed.stdout,
-            )
-            self.assertIn("--- [pre-release-check] Run the full test suite ---", completed.stdout)
-            self.assertIn(
-                "--- [pre-release-check] Build distributions into a temporary directory ---",
-                completed.stdout,
-            )
-            self.assertIn(
-                "--- [pre-release-check] All pre-release checks passed ---",
-                completed.stdout,
-            )
-
     ## @brief Verify fail-fast abort when the first `uv` step fails.
-    # @details Forces the fake `uv` to fail its first invocation (`--version`
-    #          prerequisite step) so the script must exit non-zero, print a
-    #          step-failed diagnostic, skip the success line, and never
-    #          invoke `uv` again.
+    # @details The failing `uv --version` prerequisite precedes the baseline,
+    #          so no cleanup runs and `uv` is never invoked again.
     # @return None.
-    # @satisfies REQ-219, REQ-225
+    # @satisfies REQ-219, REQ-225, REQ-300
     def test_script_aborts_at_first_failing_step(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             # Arrange
-            temp_root = Path(tmp_dir)
-            env, capture_path = self._make_fake_environment(temp_root)
-            env["UV_FAIL_FIRST"] = "1"
+            sandbox = create_sandbox(Path(tmp_dir))
+            env = dict(sandbox.env, UV_FAIL_MATCH=" --version ")
+            expected_invocations = [["--version"]]
             # Act
-            completed = self._run_script(env, self.REPO_ROOT)
+            completed = sandbox.run(self.SCRIPT_NAME, env=env)
             # Assert
             self.assertNotEqual(completed.returncode, 0)
-            self.assertIn(
-                "--- [pre-release-check] Step failed: Check uv availability ---",
-                completed.stderr,
-            )
+            self.assertIn("--- [pre-release-check] Step failed: Check uv availability ---", completed.stderr)
+            self.assertIn("--- [pre-release-check] Result: FAILED (Check uv availability) ---", completed.stderr)
             self.assertNotIn("All pre-release checks passed", completed.stdout)
-            invocations = self._split_uv_invocations(capture_path)
-            self.assertEqual(invocations, [["--version"]])
+            self.assertNotIn("Clean up generated artifacts", completed.stdout)
+            self.assertEqual(sandbox.uv_invocations(), expected_invocations)
 
-    ## @brief Verify abort with explicit English error when git is missing.
-    # @details Restricts PATH to a fake bin directory containing no `git`
-    #          shim so the prerequisite step must fail before any `uv`
-    #          invocation.
+    ## @brief Verify abort with an explicit error when `git` is missing.
+    # @details PATH holds only the fake `uv`, so the `git` prerequisite step
+    #          fails before any `uv` invocation.
     # @return None.
     # @satisfies REQ-219, REQ-225
     def test_script_aborts_when_git_is_missing(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             # Arrange
-            temp_root = Path(tmp_dir)
-            env, capture_path = self._make_fake_environment(temp_root, include_git=False, minimal_path=True)
-            env["PATH"] = (temp_root / "bin").as_posix()
+            sandbox = create_sandbox(Path(tmp_dir))
+            env = dict(sandbox.env, PATH=sandbox.fake_bin.as_posix())
             bash_exe = shutil.which("bash")
             self.assertIsNotNone(bash_exe)
             assert bash_exe is not None  # Type narrowing for static analysis.
             # Act
             completed = subprocess.run(
-                [bash_exe, str(self.SCRIPT_PATH)],
-                cwd=str(self.REPO_ROOT),
+                [bash_exe, str(sandbox.script(self.SCRIPT_NAME))],
+                cwd=str(sandbox.repo),
                 env=env,
                 capture_output=True,
                 text=True,
@@ -278,11 +170,303 @@ class PreReleaseCheckScriptTest(unittest.TestCase):
             )
             # Assert
             self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("--- [pre-release-check] Step failed: Check git availability ---", completed.stderr)
+            self.assertEqual(sandbox.uv_invocations(), [])
+
+    ## @brief Verify abort with an explicit error when `uv` is missing.
+    # @details PATH holds only a `git` shim, so the `uv` prerequisite step
+    #          fails immediately after the `git` step.
+    # @return None.
+    # @satisfies REQ-219, REQ-225
+    def test_script_aborts_when_uv_is_missing(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # Arrange
+            sandbox = create_sandbox(Path(tmp_dir))
+            git_only_bin = Path(tmp_dir) / "git-only-bin"
+            git_only_bin.mkdir()
+            write_executable(git_only_bin / "git", "#!/bin/sh\nexit 0\n")
+            env = dict(sandbox.env, PATH=git_only_bin.as_posix())
+            bash_exe = shutil.which("bash")
+            self.assertIsNotNone(bash_exe)
+            assert bash_exe is not None  # Type narrowing for static analysis.
+            # Act
+            completed = subprocess.run(
+                [bash_exe, str(sandbox.script(self.SCRIPT_NAME))],
+                cwd=str(sandbox.repo),
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            # Assert
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("--- [pre-release-check] Step failed: Check uv availability ---", completed.stderr)
+            self.assertEqual(sandbox.uv_invocations(), [])
+
+    ## @brief Verify pre-existing release artifacts abort the run untouched.
+    # @details The guard fails before the baseline, the lock check, and any
+    #          removal, and reports the `scripts/build.sh --clean` remedy.
+    # @return None.
+    # @satisfies REQ-290
+    def test_script_aborts_when_release_artifacts_preexist(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # Arrange
+            sandbox = create_sandbox(Path(tmp_dir))
+            existing = sandbox.repo / "dist" / "galias-0.0.1.tar.gz"
+            existing.parent.mkdir()
+            existing.write_text("previous build", encoding="utf-8")
+            expected_invocations = [["--version"]]
+            # Act
+            completed = sandbox.run(self.SCRIPT_NAME)
+            # Assert
+            self.assertEqual(completed.returncode, 1)
             self.assertIn(
-                "--- [pre-release-check] Step failed: Check git availability ---",
+                "--- [pre-release-check] Step failed: Check for pre-existing release artifacts ---",
                 completed.stderr,
             )
-            self.assertFalse(capture_path.exists())
+            self.assertIn(str(existing), completed.stderr)
+            self.assertIn("scripts/build.sh --clean", completed.stderr)
+            self.assertEqual(existing.read_text(encoding="utf-8"), "previous build")
+            self.assertEqual(sandbox.uv_invocations(), expected_invocations)
+
+    ## @brief Verify the full step sequence, output, and zero residue.
+    # @details Executes from a foreign working directory against a sandbox
+    #          path containing a space; asserts the exact `uv` invocation
+    #          order, canonical progress and result lines, and a sandbox
+    #          free of artifacts, caches, `.venv`, and temporary directories.
+    # @return None.
+    # @satisfies REQ-218, REQ-219, REQ-220, REQ-221, REQ-222, REQ-224, REQ-226, REQ-227, REQ-300
+    def test_script_executes_full_step_sequence_from_any_working_directory(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # Arrange
+            sandbox = create_sandbox(Path(tmp_dir))
+            outside_cwd = Path(tmp_dir) / "elsewhere"
+            outside_cwd.mkdir()
+            dist = sandbox.repo / "dist"
+            expected_sdist = str(dist / "galias-1.2.3.tar.gz")
+            expected_wheel = str(dist / "galias-1.2.3-py3-none-any.whl")
+            expected_progress = [
+                "Check git availability",
+                "Check uv availability",
+                "Validate repository structure",
+                "Check shell script syntax",
+                "Check for pre-existing release artifacts",
+                "Record repository state",
+                "Check dependency lock synchronization",
+                "Check Python sources and project metadata",
+                "Check version consistency",
+                "Run the full test suite",
+                "Build release artifacts",
+                "Validate release artifacts",
+                "Verify release artifacts are ignored by git",
+                "Verify wheel installation in an isolated environment",
+                "All pre-release checks passed",
+                "Clean up generated artifacts",
+                "Verify repository integrity",
+                "Result: PASSED",
+            ]
+            # Act
+            completed = sandbox.run(self.SCRIPT_NAME, cwd=outside_cwd)
+            # Assert
+            self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+            invocations = sandbox.uv_invocations()
+            self.assertEqual(len(invocations), 8)
+            self.assertEqual(invocations[0], ["--version"])
+            self.assertEqual(invocations[1], ["lock", "--check"])
+            self.assertEqual(invocations[2], ["run", "python", "-", str(sandbox.repo)])
+            self.assertEqual(invocations[3][:3], ["run", "python", "-c"])
+            self.assertIn('main(["ver"], check_updates=False)', invocations[3][3])
+            self.assertEqual(invocations[4], ["run", "pytest"])
+            self.assertEqual(invocations[5][:2], ["build", "--out-dir"])
+            self.assertEqual(
+                invocations[6],
+                ["run", "python", "-", str(sandbox.repo), expected_sdist, expected_wheel],
+            )
+            self.assertEqual(
+                invocations[7],
+                ["run", "--isolated", "--no-project", "--with", expected_wheel, "python", "-", str(sandbox.repo)],
+            )
+            progress = [
+                line[len("--- [pre-release-check] "):-len(" ---")]
+                for line in completed.stdout.splitlines()
+                if line.startswith("--- [pre-release-check] ")
+            ]
+            self.assertEqual(progress, expected_progress)
+            self._assert_sandbox_clean(sandbox)
+
+    ## @brief Verify pre-existing repository content survives a passing run.
+    # @details A dirty tracked file, a pre-existing `.venv`, and a
+    #          non-generated `dist/` file keep their exact content while
+    #          generated artifacts are removed.
+    # @return None.
+    # @satisfies REQ-223, REQ-227, REQ-298
+    def test_script_preserves_preexisting_repository_content(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # Arrange
+            sandbox = create_sandbox(Path(tmp_dir))
+            readme = sandbox.repo / "README.md"
+            readme.write_text("locally modified\n", encoding="utf-8")
+            venv_marker = sandbox.repo / ".venv" / "keep.txt"
+            venv_marker.parent.mkdir()
+            venv_marker.write_text("environment", encoding="utf-8")
+            notes = sandbox.repo / "dist" / "NOTES.md"
+            notes.parent.mkdir()
+            notes.write_text("notes", encoding="utf-8")
+            expected_status = " M README.md\n?? dist/NOTES.md\n"
+            # Act
+            completed = sandbox.run(self.SCRIPT_NAME)
+            # Assert
+            self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+            self.assertIn("--- [pre-release-check] Result: PASSED ---", completed.stdout)
+            self.assertEqual(sandbox.git("status", "--porcelain", "--untracked-files=all"), expected_status)
+            self.assertEqual(readme.read_text(encoding="utf-8"), "locally modified\n")
+            self.assertEqual(venv_marker.read_text(encoding="utf-8"), "environment")
+            self.assertEqual(notes.read_text(encoding="utf-8"), "notes")
+            self.assertEqual(sorted(entry.name for entry in notes.parent.iterdir()), ["NOTES.md"])
+            self.assertEqual(sandbox.temp_entries(), [])
+
+    ## @brief Verify a failing test suite aborts before the build and cleans up.
+    # @return None.
+    # @satisfies REQ-221, REQ-225, REQ-226, REQ-299
+    def test_script_cleans_up_when_test_suite_fails(self):
+        # Arrange
+        overrides = {"UV_FAIL_MATCH": " pytest "}
+        # Act
+        invocations = self._assert_step_failure_with_cleanup(overrides, "Run the full test suite")
+        # Assert
+        self.assertEqual(invocations[-1], ["run", "pytest"])
+        self.assertNotIn("build", [invocation[0] for invocation in invocations])
+
+    ## @brief Verify a failing build aborts the run and cleans up.
+    # @return None.
+    # @satisfies REQ-222, REQ-225, REQ-226, REQ-299
+    def test_script_cleans_up_when_build_fails(self):
+        # Arrange
+        overrides = {"UV_FAIL_MATCH": " build "}
+        # Act
+        invocations = self._assert_step_failure_with_cleanup(overrides, "Build release artifacts")
+        # Assert
+        self.assertEqual(invocations[-1][0], "build")
+
+    ## @brief Verify a missing expected artifact aborts the run and cleans up.
+    # @return None.
+    # @satisfies REQ-222, REQ-225, REQ-226, REQ-299
+    def test_script_cleans_up_when_expected_artifact_is_missing(self):
+        # Arrange
+        overrides = {"UV_BUILD_OMIT": "wheel"}
+        # Act
+        invocations = self._assert_step_failure_with_cleanup(overrides, "Build release artifacts")
+        # Assert
+        self.assertEqual(invocations[-1][0], "build")
+
+    ## @brief Verify a file left behind by a step fails the run after cleanup.
+    # @details Every step passes; the integrity verification reports the
+    #          stray ignored file and converts the result into a failure.
+    # @return None.
+    # @satisfies REQ-298, REQ-299, REQ-300
+    def test_script_fails_when_a_generated_file_remains_after_cleanup(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # Arrange
+            sandbox = create_sandbox(Path(tmp_dir))
+            env = dict(sandbox.env, UV_STRAY_FILE="stray-output.bin")
+            expected_returncode = 1
+            # Act
+            completed = sandbox.run(self.SCRIPT_NAME, env=env)
+            # Assert
+            self.assertEqual(completed.returncode, expected_returncode)
+            self.assertIn("All pre-release checks passed", completed.stdout)
+            self.assertNotIn("Result: PASSED", completed.stdout)
+            self.assertIn("stray-output.bin", completed.stderr)
+            self.assertIn(
+                "--- [pre-release-check] Result: FAILED (cleanup and repository integrity verification) ---",
+                completed.stderr,
+            )
+
+    ## @brief Verify a tracked file modified by a step fails the run.
+    # @return None.
+    # @satisfies REQ-223, REQ-298, REQ-299
+    def test_script_fails_when_a_tracked_file_is_modified(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # Arrange
+            sandbox = create_sandbox(Path(tmp_dir))
+            env = dict(sandbox.env, UV_TOUCH_TRACKED="README.md")
+            expected_returncode = 1
+            # Act
+            completed = sandbox.run(self.SCRIPT_NAME, env=env)
+            # Assert
+            self.assertEqual(completed.returncode, expected_returncode)
+            self.assertIn("Tracked files changed during the run", completed.stderr)
+            self.assertIn(" M README.md", completed.stderr)
+            self.assertNotIn("Result: PASSED", completed.stdout)
+
+    ## @brief Verify cleanup refuses to delete git-tracked content.
+    # @details A tracked file inside a `__pycache__` cleanup target survives
+    #          and the refusal converts the passing run into a failure.
+    # @return None.
+    # @satisfies REQ-288, REQ-299
+    def test_script_fails_when_cleanup_target_holds_tracked_files(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # Arrange
+            sandbox = create_sandbox(Path(tmp_dir))
+            tracked = sandbox.repo / "src" / "git_alias" / "__pycache__" / "tracked.pyc"
+            tracked.parent.mkdir()
+            tracked.write_text("tracked", encoding="utf-8")
+            sandbox.git("add", "--force", "src/git_alias/__pycache__/tracked.pyc")
+            sandbox.git("commit", "-q", "-m", "track cache file")
+            expected_returncode = 1
+            # Act
+            completed = sandbox.run(self.SCRIPT_NAME)
+            # Assert
+            self.assertEqual(completed.returncode, expected_returncode)
+            self.assertIn("Refusing to remove", completed.stderr)
+            self.assertEqual(tracked.read_text(encoding="utf-8"), "tracked")
+            self.assertNotIn("Result: PASSED", completed.stdout)
+
+    ## @brief Verify termination signals trigger cleanup and `128+N` exit.
+    # @details The fake `uv` blocks inside the pytest step after signalling
+    #          readiness through a FIFO (bounded wait, no polling); the
+    #          signal targets the whole process group, mirroring a terminal
+    #          interrupt.
+    # @return None.
+    # @satisfies REQ-226, REQ-297, REQ-300
+    @unittest.skipIf(os.name == "nt", "POSIX process groups and FIFOs are required")
+    def test_script_cleans_up_when_interrupted_by_signal(self):
+        for signal_number, expected_returncode, signal_name in (
+            (signal.SIGINT, 130, "SIGINT"),
+            (signal.SIGTERM, 143, "SIGTERM"),
+        ):
+            with self.subTest(signal=signal_name), tempfile.TemporaryDirectory() as tmp_dir:
+                # Arrange
+                sandbox = create_sandbox(Path(tmp_dir))
+                fifo_path = Path(tmp_dir) / "ready.fifo"
+                os.mkfifo(fifo_path)
+                # O_RDWR keeps the FIFO open so neither side blocks on open.
+                ready_fd = os.open(fifo_path, os.O_RDWR)
+                self.addCleanup(os.close, ready_fd)
+                env = dict(sandbox.env, UV_BLOCK_FIFO=str(fifo_path))
+                process = subprocess.Popen(
+                    ["bash", str(sandbox.script(self.SCRIPT_NAME))],
+                    cwd=str(sandbox.repo),
+                    env=env,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    start_new_session=True,
+                )
+                readable, _, _ = select.select([ready_fd], [], [], 120)
+                self.assertEqual(readable, [ready_fd], msg="pytest step was never reached")
+                # Act
+                os.killpg(process.pid, signal_number)
+                stdout, stderr = process.communicate(timeout=120)
+                # Assert
+                self.assertEqual(process.returncode, expected_returncode, msg=stderr)
+                self.assertIn(
+                    f"--- [pre-release-check] Result: FAILED (interrupted by {signal_name} "
+                    "during: Run the full test suite) ---",
+                    stderr,
+                )
+                self.assertIn("--- [pre-release-check] Clean up generated artifacts ---", stdout)
+                self._assert_sandbox_clean(sandbox)
 
 
 if __name__ == "__main__":
