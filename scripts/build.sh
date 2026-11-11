@@ -213,23 +213,12 @@ remove_empty_dist_dir() {
 }
 
 ## @brief Implement `--clean`: remove generated outputs without building.
-# @details O(N); removes generated release artifacts, build intermediates,
-#          and an emptied `dist/` directory (REQ-286). Tracked and
-#          non-generated files are preserved.
+# @details O(1); delegates to `scripts/clean.sh`, the canonical cleanup entry
+#          point for every artifact created by this script (REQ-286, REQ-309).
 # @return {int} 0 on complete cleanup; 1 on any removal failure.
 # @satisfies REQ-286
 clean_generated_outputs() {
-  local failed=0
-  log_step "Remove generated release artifacts and build intermediates"
-  remove_release_artifacts || failed=1
-  remove_build_intermediates || failed=1
-  remove_empty_dist_dir || failed=1
-  if [ "$failed" -ne 0 ]; then
-    log_error "Cleanup incomplete"
-    return 1
-  fi
-  log_step "Cleanup completed"
-  return 0
+  "$SCRIPT_DIR/clean.sh"
 }
 
 ## @brief Implement `--list-artifacts`: print generated `dist/` artifacts.

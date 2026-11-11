@@ -33,6 +33,14 @@
     - `scripts/build.sh::<module_body>`
   - Defining Files:
     - `scripts/build.sh`
+- ID: PROC:clean-sh
+  - Type: Process
+  - Parent Process: null
+  - Role: Bash cleanup script removing every artifact created by `scripts/build.sh` (untracked `dist/` release artifacts, `build/`, `src/*.egg-info`, and an emptied `dist/`) while preserving git-tracked and non-generated files
+  - Entrypoint Symbols:
+    - `scripts/clean.sh::<module_body>`
+  - Defining Files:
+    - `scripts/clean.sh`
 - ID: PROC:git
   - Type: Process
   - Parent Process: null
@@ -256,7 +264,7 @@
     - `scripts/pre-release-check.sh::on_signal(...)`: record the interruption and exit with `128+<signal number>` [`scripts/pre-release-check.sh`]
     - `scripts/pre-release-check.sh::on_error(...)`: report an unexpected command failure outside `run_step` [`scripts/pre-release-check.sh`]
     - `scripts/pre-release-check.sh::on_exit(...)`: exit trap performing cleanup, integrity verification, exit-status resolution, and the final result line [`scripts/pre-release-check.sh`]
-      - `scripts/pre-release-check.sh::cleanup_generated_artifacts(...)`: delegate build outputs to `scripts/build.sh --clean` and remove `.pytest_cache`, `__pycache__` directories, and a `.venv` created during the run [`scripts/pre-release-check.sh`]
+      - `scripts/pre-release-check.sh::cleanup_generated_artifacts(...)`: delegate build outputs to `scripts/clean.sh` and remove `.pytest_cache`, `__pycache__` directories, and a `.venv` created during the run [`scripts/pre-release-check.sh`]
         - `scripts/pre-release-check.sh::remove_generated_path(...)`: remove one generated path unless it holds git-tracked content [`scripts/pre-release-check.sh`]
           - `scripts/pre-release-check.sh::has_tracked_content(...)`: query `git ls-files` for tracked content below a path [`scripts/pre-release-check.sh`]
       - `scripts/pre-release-check.sh::verify_repository_integrity(...)`: fail on remaining artifacts, changed tracked-file state, or new untracked or ignored files [`scripts/pre-release-check.sh`]
@@ -291,10 +299,8 @@
       - `scripts/build.sh::remove_build_intermediates(...)`: remove `build/` and `src/*.egg-info` [`scripts/build.sh`]
       - `scripts/build.sh::remove_release_artifacts(...)`: remove partial generated `dist/` artifacts [`scripts/build.sh`]
       - `scripts/build.sh::remove_empty_dist_dir(...)`: remove a `dist/` directory created by the failed run when empty [`scripts/build.sh`]
-    - `scripts/build.sh::clean_generated_outputs(...)`: `--clean` mode removing generated artifacts, intermediates, and an emptied `dist/` [`scripts/build.sh`]
-      - `scripts/build.sh::remove_release_artifacts(...)`: remove untracked generated `dist/` artifacts [`scripts/build.sh`]
-      - `scripts/build.sh::remove_build_intermediates(...)`: remove `build/` and `src/*.egg-info` [`scripts/build.sh`]
-      - `scripts/build.sh::remove_empty_dist_dir(...)`: remove `dist/` when empty [`scripts/build.sh`]
+    - `scripts/build.sh::clean_generated_outputs(...)`: `--clean` mode delegating generated-output removal to `scripts/clean.sh` [`scripts/build.sh`]
+      - External boundary: `scripts/clean.sh` child process.
     - `scripts/build.sh::list_release_artifacts(...)`: `--list-artifacts` mode printing one generated artifact path per line [`scripts/build.sh`]
       - `scripts/build.sh::collect_release_artifacts(...)`: select untracked `dist/galias-*.tar.gz` and `dist/galias-*.whl` files [`scripts/build.sh`]
     - `scripts/build.sh::print_usage(...)`: print option usage for `--help` and rejected options [`scripts/build.sh`]
@@ -444,8 +450,18 @@
 - EDGE: PROC:pre-release-check -> PROC:build-sh
   - Mechanism: OS subprocess spawn
   - Endpoint/Channel: process argv, exit status, and stdout capture
-  - Payload/Data-Shape: `scripts/build.sh` (build), `scripts/build.sh --list-artifacts` (newline-separated absolute artifact paths), and `scripts/build.sh --clean` (generated-output removal)
+  - Payload/Data-Shape: `scripts/build.sh` (build) and `scripts/build.sh --list-artifacts` (newline-separated absolute artifact paths)
   - Evidence: `scripts/pre-release-check.sh`, `scripts/build.sh`
+- EDGE: PROC:pre-release-check -> PROC:clean-sh
+  - Mechanism: OS subprocess spawn
+  - Endpoint/Channel: process argv plus stdio streams
+  - Payload/Data-Shape: `scripts/clean.sh` (generated-output removal) argv sequence
+  - Evidence: `scripts/pre-release-check.sh`, `scripts/clean.sh`
+- EDGE: PROC:build-sh -> PROC:clean-sh
+  - Mechanism: OS subprocess spawn
+  - Endpoint/Channel: process argv plus stdio streams
+  - Payload/Data-Shape: `scripts/clean.sh` (generated-output removal) argv sequence invoked by `--clean`
+  - Evidence: `scripts/build.sh`, `scripts/clean.sh`
 - EDGE: PROC:build-sh -> PROC:uv
   - Mechanism: OS subprocess spawn
   - Endpoint/Channel: process argv plus stdio streams
