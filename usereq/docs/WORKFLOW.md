@@ -251,7 +251,7 @@
       - External boundary: `uv run pytest` complete unit-test-suite execution.
       - External boundary: `scripts/build.sh` release-artifact build process.
       - `scripts/pre-release-check.sh::validate_release_artifacts(...)`: require one sdist and one wheel and validate names, archive integrity, modules, metadata, console scripts, `uv.lock` presence, and the absence of excluded sdist members through `uv run python` [`scripts/pre-release-check.sh`]
-      - `scripts/pre-release-check.sh::check_artifacts_ignored(...)`: require `git check-ignore` to match every built artifact [`scripts/pre-release-check.sh`]
+      - `scripts/pre-release-check.sh::check_artifacts_not_ignored(...)`: require `git check-ignore` to report no built artifact as ignored [`scripts/pre-release-check.sh`]
       - `scripts/pre-release-check.sh::check_wheel_installation(...)`: install the wheel into an isolated uv environment and load modules and console scripts [`scripts/pre-release-check.sh`]
     - `scripts/pre-release-check.sh::on_signal(...)`: record the interruption and exit with `128+<signal number>` [`scripts/pre-release-check.sh`]
     - `scripts/pre-release-check.sh::on_error(...)`: report an unexpected command failure outside `run_step` [`scripts/pre-release-check.sh`]

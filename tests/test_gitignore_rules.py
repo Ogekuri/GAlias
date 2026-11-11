@@ -8,7 +8,7 @@ HDT artifacts (Generator mode):
   re-inclusion block, targeted exclusion block).
 - External dependencies to isolate: repository replaced by a temporary git
   sandbox; user and system git configuration disabled.
-- Test matrix: generated `dist/` artifacts ignored (REQ-302); non-generated
+- Test matrix: generated `dist/` artifacts versionable (REQ-302); non-generated
   `dist/` files visible (REQ-301); nested `dist` directories ignored
   (REQ-303); pre-existing inclusions and exclusions unchanged (REQ-301).
 - Execution plan: CI runs the suite through `uv run pytest`; developers
@@ -54,17 +54,17 @@ class GitignoreRulesTest(unittest.TestCase):
                 ignored[relative] = completed.returncode == 0
             return ignored
 
-    ## @brief Verify generated release artifacts in `dist/` are ignored.
+    ## @brief Verify generated release artifacts in `dist/` stay visible to git.
     # @return None.
     # @satisfies REQ-302
-    def test_generated_dist_artifacts_are_ignored(self):
+    def test_generated_dist_artifacts_are_versionable(self):
         # Arrange
         paths = [
             "dist/galias-1.2.3.tar.gz",
             "dist/galias-1.2.3-py3-none-any.whl",
             "dist/nested/galias-1.2.3-py3-none-any.whl",
         ]
-        expected_output = {path: True for path in paths}
+        expected_output = {path: False for path in paths}
         # Act
         actual_output = self._classify(paths)
         # Assert

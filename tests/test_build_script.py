@@ -162,9 +162,10 @@ class BuildScriptTest(unittest.TestCase):
     # @details Runs from a foreign working directory against a sandbox path
     #          containing a space; asserts the staged `uv build` invocation,
     #          final `dist/` content without the uv `.gitignore` marker,
-    #          removal of intermediates and staging, and the summary.
+    #          removal of intermediates and staging, the summary, and that the
+    #          built artifacts are git-visible untracked files (REQ-302).
     # @return None.
-    # @satisfies REQ-280, REQ-283, REQ-284, REQ-285
+    # @satisfies REQ-280, REQ-283, REQ-284, REQ-285, REQ-302
     def test_build_installs_artifacts_into_dist_from_any_working_directory(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             # Arrange
@@ -184,7 +185,7 @@ class BuildScriptTest(unittest.TestCase):
             self.assertFalse((sandbox.repo / "build").exists())
             self.assertFalse((sandbox.repo / "src" / "galias.egg-info").exists())
             self.assertEqual(sandbox.temp_entries(), [])
-            self.assertEqual(sandbox.git("status", "--porcelain"), "")
+            self.assertEqual(sandbox.git("status", "--porcelain"), "?? dist/\n")
             self.assertIn("--- [build] Build completed: 2 release artifacts", completed.stdout)
             for artifact in self.EXPECTED_ARTIFACTS:
                 self.assertIn(f"{dist / artifact} (", completed.stdout)

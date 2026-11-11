@@ -264,7 +264,7 @@ class PreReleaseCheckScriptTest(unittest.TestCase):
                 "Run the full test suite",
                 "Build release artifacts",
                 "Validate release artifacts",
-                "Verify release artifacts are ignored by git",
+                "Verify release artifacts are not ignored by git",
                 "Verify wheel installation in an isolated environment",
                 "All pre-release checks passed",
                 "Clean up generated artifacts",
@@ -387,6 +387,30 @@ class PreReleaseCheckScriptTest(unittest.TestCase):
                 "--- [pre-release-check] Result: FAILED (cleanup and repository integrity verification) ---",
                 completed.stderr,
             )
+
+    ## @brief Verify an ignored release artifact fails the release check.
+    # @details Appends a root `/dist/` rule to the sandbox `.gitignore` so git
+    #          ignores the built artifacts; the run fails at the not-ignored step
+    #          and reports that step as the failed result.
+    # @return None.
+    # @satisfies REQ-295, REQ-299, REQ-300
+    def test_script_fails_when_release_artifacts_are_ignored(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # Arrange
+            sandbox = create_sandbox(Path(tmp_dir))
+            gitignore = sandbox.repo / ".gitignore"
+            gitignore.write_text(gitignore.read_text(encoding="utf-8") + "\n/dist/\n", encoding="utf-8")
+            expected_returncode = 1
+            # Act
+            completed = sandbox.run(self.SCRIPT_NAME)
+            # Assert
+            self.assertEqual(completed.returncode, expected_returncode)
+            self.assertIn("is ignored by git", completed.stderr)
+            self.assertIn(
+                "--- [pre-release-check] Result: FAILED (Verify release artifacts are not ignored by git) ---",
+                completed.stderr,
+            )
+            self.assertNotIn("Result: PASSED", completed.stdout)
 
     ## @brief Verify a tracked file modified by a step fails the run.
     # @return None.

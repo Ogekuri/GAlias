@@ -425,16 +425,24 @@ print(f"Validated {sdist.name} and {wheel.name} ({len(modules)} package modules,
 PY
 }
 
-## @brief Verify git ignores every built release artifact.
-# @details O(1); runs `git check-ignore` on the built sdist and wheel so a
-#          `.gitignore` regression exposing artifacts fails the check (REQ-295).
-# @return {int} 0 when both artifacts are ignored; 1 otherwise.
+## @brief Verify git does not ignore any built release artifact.
+# @details O(1); runs `git check-ignore` on the built sdist and wheel. Exit
+#          status 0 (ignored) fails the check; any status other than 1 (query
+#          error) fails the check, so a `.gitignore` regression hiding artifacts
+#          from git fails the release (REQ-295).
+# @return {int} 0 when both artifacts are not ignored; 1 otherwise.
 # @satisfies REQ-295
-check_artifacts_ignored() {
-  local artifact
+check_artifacts_not_ignored() {
+  local artifact status
   for artifact in "$SDIST_PATH" "$WHEEL_PATH"; do
-    if ! git -C "$REPO_ROOT" check-ignore -q -- "$artifact"; then
-      log_detail "Release artifact '$artifact' is not ignored by git"
+    status=0
+    git -C "$REPO_ROOT" check-ignore -q -- "$artifact" || status=$?
+    if [ "$status" -eq 0 ]; then
+      log_detail "Release artifact '$artifact' is ignored by git"
+      return 1
+    fi
+    if [ "$status" -ne 1 ]; then
+      log_detail "Unable to query git ignore status for '$artifact'"
       return 1
     fi
   done
@@ -715,7 +723,7 @@ run_step "Check version consistency" check_version_consistency
 run_step "Run the full test suite" uv run pytest
 run_step "Build release artifacts" "$BUILD_SCRIPT"
 run_step "Validate release artifacts" validate_release_artifacts
-run_step "Verify release artifacts are ignored by git" check_artifacts_ignored
+run_step "Verify release artifacts are not ignored by git" check_artifacts_not_ignored
 run_step "Verify wheel installation in an isolated environment" check_wheel_installation
 CURRENT_STEP="completion"
 log_step "All pre-release checks passed"

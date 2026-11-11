@@ -17,13 +17,14 @@ tags: ["requirements", "srs", "galias"]
 ---
 
 # GAlias CLI Requirements
-**Version**: 1.52
+**Version**: 1.53
 **Author**: Francesco Rolando
 **Date**: 2026-11-11
 
 ## Revision History
 | Date | Version | Change Summary |
 |------|---------|----------------|
+| 2026-11-11 | 1.53 | Changed `dist/` release artifacts to git-versionable: `.gitignore` re-includes `dist/` through `!dist/` and `!dist/**/*` in the include section with no later artifact exclusion (REQ-301, REQ-302), and the pre-release artifact ignore check verifies artifacts are not ignored (REQ-295). |
 | 2026-11-11 | 1.52 | Defined the sdist content policy: the sdist is restricted to runtime sources and metadata and excludes tests, scripts, usereq, MANIFEST.in, and generated egg-info (REQ-304, REQ-305); the parity clause moved from REQ-128 to REQ-306; REQ-307 and REQ-308 extend the staged-build and artifact-validation gates of REQ-283 and REQ-294. |
 | 2026-11-11 | 1.51 | Added the `scripts/build.sh` release-artifact build script with targeted `--clean`/`--list-artifacts` modes, expanded `scripts/pre-release-check.sh` into the complete release-readiness check invoking `scripts/build.sh` with artifact validation, signal-safe cleanup, and repository-integrity verification, and replaced the blanket `.gitignore` `dist/` exclusion with targeted artifact rules (REQ-222, REQ-226, REQ-227, REQ-280..REQ-303). |
 | 2026-11-11 | 1.50 | Renamed the configuration documentation command from `--params` to `--info`, keeping its schema-derived hierarchy, subtree filtering, metadata children, and tables (REQ-243, REQ-251, REQ-263, REQ-264, REQ-273, REQ-275, REQ-276, REQ-278). |
@@ -406,14 +407,14 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-292**: MUST verify via `uv run python` that every Python file under `src/` and `tests/` compiles and that `pyproject.toml` parses as TOML.
 - **REQ-293**: MUST verify version consistency across version-managed files by executing the `ver` alias with update checks disabled before test execution.
 - **REQ-294**: MUST validate built artifacts as exactly one sdist and one wheel matching the `pyproject.toml` name and version, with intact archives, every `src/git_alias/*.py` module, matching metadata, and declared console scripts.
-- **REQ-295**: MUST verify through `git check-ignore` that git ignores every built release artifact.
+- **REQ-295**: MUST verify through `git check-ignore` that git does not ignore any built release artifact, so every artifact remains versionable.
 - **REQ-296**: MUST verify the built wheel installs into an isolated uv environment where `git_alias` modules import and every declared console-script entry point loads.
 - **REQ-297**: MUST run pre-release cleanup through `EXIT`, `INT`, `TERM`, and `HUP` traps and exit non-zero when interrupted, using status `128+<signal number>` when Bash dispatches the signal trap.
 - **REQ-298**: MUST verify after cleanup that no generated artifact remains, the tracked-file state equals the pre-run state, and no new untracked or ignored file exists outside `.venv`.
 - **REQ-299**: MUST preserve the failing-step non-zero exit status when cleanup succeeds, and MUST exit non-zero when cleanup or post-cleanup verification fails after all checks passed.
 - **REQ-300**: MUST print a final `--- [pre-release-check] Result: PASSED ---` or `--- [pre-release-check] Result: FAILED (<failed step>) ---` summary line on every exit path.
-- **REQ-301**: MUST keep the `.gitignore` exclude-all-then-re-include strategy and re-include root `dist/` through `!/dist/` and `!/dist/**` rules.
-- **REQ-302**: MUST ignore generated release artifacts through `/dist/**/*.whl` and `/dist/**/*.tar.gz` rules ordered after the `dist/` re-inclusion rules.
+- **REQ-301**: MUST keep the `.gitignore` exclude-all-then-re-include strategy and re-include root `dist/` through `!dist/` and `!dist/**/*` rules placed in the include section.
+- **REQ-302**: MUST keep generated release artifacts `dist/**/*.whl` and `dist/**/*.tar.gz` git-visible by applying no exclusion rule to them after the `dist/` re-inclusion rules.
 - **REQ-303**: MUST ignore directories named `dist` below the repository root level through the `/*/**/dist/` rule replacing the unanchored `dist/` rule.
 - **REQ-304**: MUST restrict the sdist to runtime sources, `pyproject.toml`, `README.md`, `LICENSE`, `uv.lock`, and setuptools-generated metadata (`PKG-INFO`, `setup.cfg`, `src/galias.egg-info/SOURCES.txt`), selected by the tracked `MANIFEST.in`.
 - **REQ-305**: MUST exclude from the sdist the `tests/`, `scripts/`, and `usereq/` trees, `MANIFEST.in`, and every generated `src/galias.egg-info` file except `SOURCES.txt`.
@@ -453,7 +454,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - `release-pypi.yml` implements manual-or-tag-triggered CI release build, GitHub Release publication, and PyPI OIDC Trusted Publishing; tag commits contained in `origin/master` or `origin/develop` run the release workflow, and only master-contained tag commits publish to PyPI (REQ-205, REQ-206). Release automation executes on the GitHub Actions Node24 runner generation without Node20 opt-out overrides (REQ-211, REQ-212, REQ-213). A `test-release` job runs lock synchronization and the complete pytest suite before the gated `build-release` job, so failed tests prevent release artifacts and any publication (REQ-228, REQ-229).
 - `scripts/build.sh` implements the release-artifact build flow: prerequisite checks, stale-output removal, staged `uv build`, artifact verification, installation into `dist/`, and the `--clean`/`--list-artifacts` modes (REQ-280..REQ-288).
 - `scripts/pre-release-check.sh` implements the repository-local release-readiness flow: toolchain and structure checks, syntax checks, lockfile synchronization, version consistency, full pytest execution, `scripts/build.sh` invocation, artifact validation, and signal-safe cleanup with repository-integrity verification (REQ-217..REQ-227, REQ-288..REQ-300).
-- `.gitignore` implements the exclude-all-then-re-include strategy with targeted `dist/` release-artifact exclusions (REQ-301..REQ-303).
+- `.gitignore` implements the exclude-all-then-re-include strategy, re-includes root `dist/` release artifacts as versionable files, and excludes nested `dist` directories (REQ-301..REQ-303).
 - No explicit performance optimizations identified.
 
 ### 3.5 Evidence for Added Requirements
@@ -537,14 +538,14 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-292** evidence: `scripts/pre-release-check.sh` `check_python_sources`.
 - **REQ-293** evidence: `scripts/pre-release-check.sh` `check_version_consistency` calling `main(["ver"], check_updates=False)` before the pytest step.
 - **REQ-294** evidence: `scripts/pre-release-check.sh` `validate_release_artifacts`.
-- **REQ-295** evidence: `scripts/pre-release-check.sh` `check_artifacts_ignored`.
+- **REQ-295** evidence: `scripts/pre-release-check.sh` `check_artifacts_not_ignored`.
 - **REQ-296** evidence: `scripts/pre-release-check.sh` `check_wheel_installation` running `uv run --isolated --no-project --with <wheel>`.
 - **REQ-297** evidence: `scripts/pre-release-check.sh` `on_signal` and `on_exit` trap registrations for `EXIT`, `INT`, `TERM`, and `HUP`.
 - **REQ-298** evidence: `scripts/pre-release-check.sh` `verify_repository_integrity` comparing `snapshot_tracked_state` and `snapshot_untracked_files` baselines.
 - **REQ-299** evidence: `scripts/pre-release-check.sh` `on_exit` exit-status resolution.
 - **REQ-300** evidence: `scripts/pre-release-check.sh` `on_exit` `Result: PASSED`/`Result: FAILED (...)` summary lines.
-- **REQ-301** evidence: `.gitignore` leading `/*`, `*.*`, `*/**` exclusions followed by `!/dist/` and `!/dist/**` re-inclusions.
-- **REQ-302** evidence: `.gitignore` `/dist/**/*.whl` and `/dist/**/*.tar.gz` rules in the exclusion section.
+- **REQ-301** evidence: `.gitignore` leading `/*`, `*.*`, `*/**` exclusions followed by `!dist/` and `!dist/**/*` re-inclusions in the include section.
+- **REQ-302** evidence: `.gitignore` contains no exclusion rule matching `dist/**/*.whl` or `dist/**/*.tar.gz`; `tests/test_gitignore_rules.py` `test_generated_dist_artifacts_are_versionable`.
 - **REQ-303** evidence: `.gitignore` `/*/**/dist/` rule in the exclusion section.
 - **REQ-224** evidence: `scripts/pre-release-check.sh` `--- [pre-release-check] ... ---` progress lines plus the final success line.
 - **REQ-225** evidence: `scripts/pre-release-check.sh` `run_step` fail-fast handler exiting non-zero at the first failed step.
