@@ -15,7 +15,7 @@
 #          (REQ-282, REQ-288). The repository root derives from the script
 #          location, so invocation works from any working directory (REQ-280).
 #          Complexity: O(N) over `dist/` entries plus the delegated build.
-# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285, REQ-286, REQ-287, REQ-288
+# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285, REQ-286, REQ-287, REQ-288, REQ-307
 
 set -Eeuo pipefail
 
@@ -265,6 +265,44 @@ check_build_prerequisites() {
   fi
 }
 
+## @brief Verify the staged sdist member list against the sdist content policy.
+# @details O(M) over archive members. Writes the `tar -tzf` listing into the
+#          staging directory so a listing failure aborts the build instead of
+#          being masked by a pipeline (REQ-307). Requires the metadata, license,
+#          readme, lock file, and package entry module members. Rejects members
+#          of the `tests/`, `scripts/`, and `usereq/` trees, `MANIFEST.in`, and
+#          generated `src/*.egg-info/` files other than `SOURCES.txt` (REQ-305).
+# @param archive {str} Absolute path of the staged sdist archive.
+# @return None; never returns when the listing fails or a member violates REQ-304 or REQ-305.
+# @satisfies REQ-304, REQ-305, REQ-307
+verify_sdist_content() {
+  local archive="$1"
+  local listing="$STAGING_DIR/sdist-members.txt"
+  local member relative required seen=" "
+  local -a excluded=()
+  tar -tzf "$archive" > "$listing" || fail "Unable to list the members of '${archive##*/}'"
+  while IFS= read -r member; do
+    relative="${member#*/}"
+    case "$relative" in
+      tests|tests/*|scripts|scripts/*|usereq|usereq/*|MANIFEST.in)
+        excluded+=("$member") ;;
+      src/*.egg-info/SOURCES.txt|src/*.egg-info/) ;;
+      src/*.egg-info/*)
+        excluded+=("$member") ;;
+    esac
+    seen+="$relative "
+  done < "$listing"
+  for required in PKG-INFO pyproject.toml README.md LICENSE uv.lock src/git_alias/__init__.py; do
+    case "$seen" in
+      *" $required "*) ;;
+      *) fail "Sdist '${archive##*/}' lacks required member '$required'" ;;
+    esac
+  done
+  if [ "${#excluded[@]}" -gt 0 ]; then
+    fail "Sdist '${archive##*/}' contains excluded members: ${excluded[*]}"
+  fi
+}
+
 ## @brief Verify the staging directory holds exactly the expected artifacts.
 # @details O(N) over staging entries; requires exactly one non-empty sdist
 #          and one non-empty wheel named after `DIST_NAME`, tolerates the
@@ -307,6 +345,7 @@ verify_staged_artifacts() {
   if [ ! -f "$STAGED_WHEEL" ] || [ ! -s "$STAGED_WHEEL" ]; then
     fail "Built wheel '${STAGED_WHEEL##*/}' is not a non-empty regular file"
   fi
+  verify_sdist_content "$STAGED_SDIST"
 }
 
 ## @brief Move verified staged artifacts into `dist/`.

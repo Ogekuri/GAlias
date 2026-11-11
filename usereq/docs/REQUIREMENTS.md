@@ -17,13 +17,14 @@ tags: ["requirements", "srs", "galias"]
 ---
 
 # GAlias CLI Requirements
-**Version**: 1.51
+**Version**: 1.52
 **Author**: Francesco Rolando
 **Date**: 2026-11-11
 
 ## Revision History
 | Date | Version | Change Summary |
 |------|---------|----------------|
+| 2026-11-11 | 1.52 | Defined the sdist content policy: the sdist is restricted to runtime sources and metadata and excludes tests, scripts, usereq, MANIFEST.in, and generated egg-info (REQ-304, REQ-305); the parity clause moved from REQ-128 to REQ-306; REQ-307 and REQ-308 extend the staged-build and artifact-validation gates of REQ-283 and REQ-294. |
 | 2026-11-11 | 1.51 | Added the `scripts/build.sh` release-artifact build script with targeted `--clean`/`--list-artifacts` modes, expanded `scripts/pre-release-check.sh` into the complete release-readiness check invoking `scripts/build.sh` with artifact validation, signal-safe cleanup, and repository-integrity verification, and replaced the blanket `.gitignore` `dist/` exclusion with targeted artifact rules (REQ-222, REQ-226, REQ-227, REQ-280..REQ-303). |
 | 2026-11-11 | 1.50 | Renamed the configuration documentation command from `--params` to `--info`, keeping its schema-derived hierarchy, subtree filtering, metadata children, and tables (REQ-243, REQ-251, REQ-263, REQ-264, REQ-273, REQ-275, REQ-276, REQ-278). |
 | 2026-11-11 | 1.49 | Replaced name-length-driven padding in `--print`/`--params` tree rendering with fixed four-character depth indentation, metadata children rendered through standard connectors, and table indent derived from the owning node (REQ-275..REQ-279). |
@@ -307,7 +308,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-125**: MUST execute release-check HTTP requests with a hardcoded configurable timeout defaulting to 2 seconds.
 - **REQ-126**: MUST after successful release checks write `~/.cache/galias/check_version_idle-time.json` JSON fields `last_check_unix`, `last_check_human`, `idle_until_unix`, and `idle_until_human`, with `idle_until_unix = last_check_unix + 3600`.
 - **REQ-127**: MUST print bright-red (`\033[31;1m`) update-check errors, including HTTP status diagnostics and API-provided messages such as `rate limit exceeded`.
-- **REQ-128**: MUST package and distribute every runtime-required file for CLI execution in uv release artifacts via explicit setuptools configuration in `pyproject.toml`, ensuring parity between local execution and uv/uvx-installed execution.
+- **REQ-128**: MUST package and distribute every runtime-required file for CLI execution in uv release artifacts via explicit setuptools configuration in `pyproject.toml`; the sdist content is defined by REQ-304 and REQ-305.
 - **REQ-129**: MUST define a hardcoded `idle_delay_seconds` value equal to `3600` for successful release-check scheduling.
 - **REQ-130**: MUST define a hardcoded `error_idle_delay_seconds` value equal to `86400` for version-check error scheduling.
 - **REQ-131**: MUST on any version-check error calculate `idle_until_unix = now + error_idle_delay_seconds`.
@@ -414,6 +415,11 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-301**: MUST keep the `.gitignore` exclude-all-then-re-include strategy and re-include root `dist/` through `!/dist/` and `!/dist/**` rules.
 - **REQ-302**: MUST ignore generated release artifacts through `/dist/**/*.whl` and `/dist/**/*.tar.gz` rules ordered after the `dist/` re-inclusion rules.
 - **REQ-303**: MUST ignore directories named `dist` below the repository root level through the `/*/**/dist/` rule replacing the unanchored `dist/` rule.
+- **REQ-304**: MUST restrict the sdist to runtime sources, `pyproject.toml`, `README.md`, `LICENSE`, `uv.lock`, and setuptools-generated metadata (`PKG-INFO`, `setup.cfg`, `src/galias.egg-info/SOURCES.txt`), selected by the tracked `MANIFEST.in`.
+- **REQ-305**: MUST exclude from the sdist the `tests/`, `scripts/`, and `usereq/` trees, `MANIFEST.in`, and every generated `src/galias.egg-info` file except `SOURCES.txt`.
+- **REQ-306**: MUST ensure parity between local execution and uv/uvx-installed execution of the packaged CLI.
+- **REQ-307**: MUST verify, before moving artifacts into `dist/`, that the staged sdist contains every REQ-304 member and no REQ-305 excluded member, extending REQ-283.
+- **REQ-308**: MUST validate the built sdist against REQ-304 and REQ-305 during pre-release artifact validation, extending REQ-294.
 
 ### 3.3 Project File Structure
 ```

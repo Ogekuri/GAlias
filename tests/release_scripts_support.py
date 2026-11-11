@@ -24,7 +24,7 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 #          terminated by a `--STEP--` marker, then emulates the repository
 #          side effects of the real tool. `run` creates `.venv`,
 #          `.pytest_cache`, `__pycache__`, and `src/*.egg-info` residue;
-#          `build` writes a fake sdist and wheel plus the uv `.gitignore`
+#          `build` writes a conforming sdist archive (REQ-304) and wheel plus the uv `.gitignore`
 #          marker into the `--out-dir` directory and creates `build/` and
 #          `src/*.egg-info` intermediates. Behavior switches:
 #          `UV_FAIL_MATCH` (exit 1 when the space-padded argv contains the
@@ -66,7 +66,16 @@ case "$1" in
     : > "$PWD/build/lib/residue.bin"
     : > "$PWD/src/galias.egg-info/PKG-INFO"
     printf '*' > "$out/.gitignore"
-    printf 'sdist' > "$out/galias-1.2.3.tar.gz"
+    stage="$(mktemp -d)"
+    mkdir -p "$stage/galias-1.2.3/src/git_alias"
+    : > "$stage/galias-1.2.3/PKG-INFO"
+    : > "$stage/galias-1.2.3/pyproject.toml"
+    : > "$stage/galias-1.2.3/README.md"
+    : > "$stage/galias-1.2.3/LICENSE"
+    : > "$stage/galias-1.2.3/uv.lock"
+    : > "$stage/galias-1.2.3/src/git_alias/__init__.py"
+    tar -czf "$out/galias-1.2.3.tar.gz" -C "$stage" galias-1.2.3
+    rm -rf "$stage"
     if [ "${UV_BUILD_OMIT:-}" != "wheel" ]; then
       printf 'wheel' > "$out/galias-1.2.3-py3-none-any.whl"
     fi

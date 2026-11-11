@@ -250,7 +250,7 @@
       - `scripts/pre-release-check.sh::check_version_consistency(...)`: execute the `ver` alias with update checks disabled through `uv run python` [`scripts/pre-release-check.sh`]
       - External boundary: `uv run pytest` complete unit-test-suite execution.
       - External boundary: `scripts/build.sh` release-artifact build process.
-      - `scripts/pre-release-check.sh::validate_release_artifacts(...)`: require one sdist and one wheel and validate names, archive integrity, modules, metadata, and console scripts through `uv run python` [`scripts/pre-release-check.sh`]
+      - `scripts/pre-release-check.sh::validate_release_artifacts(...)`: require one sdist and one wheel and validate names, archive integrity, modules, metadata, console scripts, `uv.lock` presence, and the absence of excluded sdist members through `uv run python` [`scripts/pre-release-check.sh`]
       - `scripts/pre-release-check.sh::check_artifacts_ignored(...)`: require `git check-ignore` to match every built artifact [`scripts/pre-release-check.sh`]
       - `scripts/pre-release-check.sh::check_wheel_installation(...)`: install the wheel into an isolated uv environment and load modules and console scripts [`scripts/pre-release-check.sh`]
     - `scripts/pre-release-check.sh::on_signal(...)`: record the interruption and exit with `128+<signal number>` [`scripts/pre-release-check.sh`]
@@ -283,6 +283,7 @@
       - `scripts/build.sh::remove_build_intermediates(...)`: remove `build/` and `src/*.egg-info` [`scripts/build.sh`]
       - External boundary: `uv build --out-dir <temporary staging directory>` sdist and wheel build.
       - `scripts/build.sh::verify_staged_artifacts(...)`: require exactly one non-empty sdist and one non-empty wheel in the staging directory [`scripts/build.sh`]
+        - `scripts/build.sh::verify_sdist_content(...)`: list the staged sdist members with `tar -tzf` and require the metadata, license, readme, lock file, and package entry module while rejecting `tests/`, `scripts/`, `usereq/`, `MANIFEST.in`, and generated egg-info files other than `SOURCES.txt` [`scripts/build.sh`]
       - `scripts/build.sh::install_staged_artifacts(...)`: move verified artifacts into `dist/` without overwriting existing files [`scripts/build.sh`]
       - `scripts/build.sh::print_build_summary(...)`: print each produced artifact path, byte size, and SHA-256 digest [`scripts/build.sh`]
       - `scripts/build.sh::fail(...)`: print the error line and exit with status 1 [`scripts/build.sh`]

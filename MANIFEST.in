@@ -1,0 +1,7 @@
+# sdist content selection: REQ-304, REQ-305 (setuptools always writes setup.cfg and src/galias.egg-info/SOURCES.txt)
+include uv.lock
+exclude MANIFEST.in
+prune tests
+prune scripts
+prune usereq
+prune src/galias.egg-info

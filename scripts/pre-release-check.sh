@@ -20,7 +20,7 @@
 #          root derives from the script location (REQ-218). Project scope
 #          note: the project configures no formatter, linter, type checker,
 #          or dependency-audit tool, so no such step exists.
-# @satisfies REQ-217, REQ-218, REQ-219, REQ-220, REQ-221, REQ-222, REQ-223, REQ-224, REQ-225, REQ-226, REQ-227, REQ-288, REQ-289, REQ-290, REQ-291, REQ-292, REQ-293, REQ-294, REQ-295, REQ-296, REQ-297, REQ-298, REQ-299, REQ-300
+# @satisfies REQ-217, REQ-218, REQ-219, REQ-220, REQ-221, REQ-222, REQ-223, REQ-224, REQ-225, REQ-226, REQ-227, REQ-288, REQ-289, REQ-290, REQ-291, REQ-292, REQ-293, REQ-294, REQ-295, REQ-296, REQ-297, REQ-298, REQ-299, REQ-300, REQ-308
 
 set -Eeuo pipefail
 
@@ -301,7 +301,7 @@ check_version_consistency() {
 #          name/version/`Requires-Python`, and wheel console scripts
 #          (REQ-294). Sets `SDIST_PATH` and `WHEEL_PATH`.
 # @return {int} 0 when both artifacts are valid; 1 otherwise.
-# @satisfies REQ-294
+# @satisfies REQ-294, REQ-308
 validate_release_artifacts() {
   local listing artifact
   local count=0
@@ -373,10 +373,23 @@ try:
             if member.isfile():
                 archive.extractfile(member).read()
         base = f"{name}-{version}/"
-        required = ["PKG-INFO", "pyproject.toml", *documents, *licenses]
+        required = ["PKG-INFO", "pyproject.toml", "uv.lock", *documents, *licenses]
         required += [f"src/git_alias/{module}" for module in modules]
         for entry in required:
             check(base + entry in members, f"sdist lacks {entry}")
+        excluded_roots = {"tests", "scripts", "usereq"}
+        for member_name, member in members.items():
+            if not member.isfile() or not member_name.startswith(base):
+                continue
+            relative_name = member_name[len(base):]
+            top_level = relative_name.split("/", 1)[0]
+            is_egg_info = (
+                relative_name.startswith("src/")
+                and ".egg-info/" in relative_name
+                and not relative_name.endswith("/SOURCES.txt")
+            )
+            if top_level in excluded_roots or relative_name == "MANIFEST.in" or is_egg_info:
+                errors.append(f"sdist contains excluded member {member_name}")
         if base + "PKG-INFO" in members:
             payload = archive.extractfile(members[base + "PKG-INFO"]).read()
             check_metadata(payload.decode("utf-8"), "sdist PKG-INFO")
