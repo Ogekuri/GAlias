@@ -237,7 +237,8 @@
   - `scripts/pre-release-check.sh::<module_body>(...)`: resolve repository root from the script location, register `EXIT`, `ERR`, `INT`, `TERM`, and `HUP` traps, and run validation steps in order [`scripts/pre-release-check.sh`]
     - `scripts/pre-release-check.sh::run_step(...)`: record the current step, print its progress line, execute it, and exit non-zero on the first failure [`scripts/pre-release-check.sh`]
       - `scripts/pre-release-check.sh::log_step(...)`: print one canonical `--- [pre-release-check] ... ---` progress line [`scripts/pre-release-check.sh`]
-      - External boundary: `git --version` and `uv --version` prerequisite availability checks.
+      - `scripts/pre-release-check.sh::check_tool_version(...)`: verify `git` and `uv` are resolvable through PATH, print the explicit `Required tool '<tool>' was not found in PATH` diagnostic when absent, and otherwise run `<tool> --version` [`scripts/pre-release-check.sh`]
+      - External boundary: `git --version` and `uv --version` prerequisite probes executed by `check_tool_version(...)`.
       - `scripts/pre-release-check.sh::validate_repository_structure(...)`: require the git work-tree root, packaging manifests, package entry module, `tests/`, and executable `scripts/build.sh` [`scripts/pre-release-check.sh`]
       - `scripts/pre-release-check.sh::check_shell_syntax(...)`: run `bash -n` on every `scripts/*.sh` file [`scripts/pre-release-check.sh`]
       - `scripts/pre-release-check.sh::check_preexisting_artifacts(...)`: abort when `scripts/build.sh --list-artifacts` reports pre-existing release artifacts [`scripts/pre-release-check.sh`]

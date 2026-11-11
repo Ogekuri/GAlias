@@ -93,6 +93,27 @@ run_step() {
   fi
 }
 
+## @brief Verify a prerequisite executable is in PATH, then run its version probe.
+# @details O(1); resolves the executable name with `command -v` before any
+#          invocation, so a missing tool never reaches Bash's own lookup
+#          message. A missing executable prints the explicit English
+#          diagnostic `Required tool '<tool>' was not found in PATH` and
+#          returns 1, which makes the enclosing `run_step` report the failed
+#          step and exit non-zero (REQ-219, REQ-225). A present executable
+#          runs `<tool> --version` and returns its exit status.
+# @param tool {str} Executable name resolved through PATH (`git` or `uv`).
+# @return {int} 0 when the executable exists and `--version` succeeds; 1 when
+#         it is missing or its version probe fails.
+# @satisfies REQ-219, REQ-225
+check_tool_version() {
+  local tool="$1"
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    log_detail "Required tool '$tool' was not found in PATH"
+    return 1
+  fi
+  "$tool" --version
+}
+
 ## @brief Validate the repository layout required by the release process.
 # @details O(1); requires `REPO_ROOT` to be the root of a git work tree and
 #          to contain the packaging manifests, documentation, package entry
@@ -669,8 +690,8 @@ trap 'on_signal HUP 129' HUP
 
 cd -- "$REPO_ROOT"
 
-run_step "Check git availability" git --version
-run_step "Check uv availability" uv --version
+run_step "Check git availability" check_tool_version git
+run_step "Check uv availability" check_tool_version uv
 run_step "Validate repository structure" validate_repository_structure
 run_step "Check shell script syntax" check_shell_syntax
 run_step "Check for pre-existing release artifacts" check_preexisting_artifacts

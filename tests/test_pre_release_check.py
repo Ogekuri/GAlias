@@ -171,6 +171,9 @@ class PreReleaseCheckScriptTest(unittest.TestCase):
             # Assert
             self.assertNotEqual(completed.returncode, 0)
             self.assertIn("--- [pre-release-check] Step failed: Check git availability ---", completed.stderr)
+            self.assertIn("[pre-release-check] Required tool 'git' was not found in PATH", completed.stderr)
+            self.assertIn("--- [pre-release-check] Result: FAILED (Check git availability) ---", completed.stderr)
+            self.assertNotIn("command not found", completed.stderr)
             self.assertEqual(sandbox.uv_invocations(), [])
 
     ## @brief Verify abort with an explicit error when `uv` is missing.
@@ -201,6 +204,9 @@ class PreReleaseCheckScriptTest(unittest.TestCase):
             # Assert
             self.assertNotEqual(completed.returncode, 0)
             self.assertIn("--- [pre-release-check] Step failed: Check uv availability ---", completed.stderr)
+            self.assertIn("[pre-release-check] Required tool 'uv' was not found in PATH", completed.stderr)
+            self.assertIn("--- [pre-release-check] Result: FAILED (Check uv availability) ---", completed.stderr)
+            self.assertNotIn("command not found", completed.stderr)
             self.assertEqual(sandbox.uv_invocations(), [])
 
     ## @brief Verify pre-existing release artifacts abort the run untouched.
