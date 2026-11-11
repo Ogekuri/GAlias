@@ -587,91 +587,135 @@ def _command_arg(text: str, style: str = "str") -> str:
     return f"'{text}'" if '"' in text else f'"{text}"'
 
 
-def _values_widths(entries: list[tuple[str, Parameter]]) -> tuple[int, int]:
-    """@brief Compute sibling name and scalar value column widths.
-    @details O(N) sibling scan; complex containers contribute names only so
-    scalar annotations align across the section.
-    @param entries {list[tuple[str, Parameter]]} Sibling name and schema pairs.
-    @return {tuple[int, int]} Name width and scalar display width, minimum 1.
+## @brief Fixed four-character indentation unit of one tree depth level.
+# @details Every rendered tree node adds exactly this unit below its parent,
+# so indentation derives exclusively from node depth (REQ-275).
+# @satisfies REQ-275
+TREE_INDENT = "    "
+
+## @brief Continuation prefix rendered below a non-last tree node.
+# @details Keeps the ancestor vertical guide above later siblings; equal in
+# width to TREE_INDENT so sibling alignment stays depth-derived (REQ-275).
+# @satisfies REQ-275
+TREE_CONTINUATION = "│   "
+
+## @brief Connector prefix of a tree node followed by siblings.
+# @satisfies REQ-277, REQ-279
+TREE_BRANCH = "├── "
+
+## @brief Connector prefix of the last tree node among its siblings.
+# @satisfies REQ-277, REQ-279
+TREE_LAST_BRANCH = "└── "
+
+
+def _tree_prefix(prefix: str, is_last: bool) -> tuple[str, str]:
+    """@brief Resolve the branch and child prefixes of one tree node.
+    @details O(1) concatenation; every node adds exactly one four-character
+    indentation unit below its parent using the standard `├── ` or `└── `
+    connector for the node line and `│   ` or four blanks for its children.
+    The result depends only on the ancestor prefix and the sibling position,
+    never on node name, value, or metadata text lengths.
+    @param prefix {str} Ancestor continuation prefix.
+    @param is_last {bool} Selects the `└── ` connector.
+    @return {tuple[str, str]} Node branch prefix and its children depth prefix.
+    @satisfies REQ-275, REQ-276
     """
-    names = [len(name) for name, _spec in entries]
-    scalars = [len(_scalar_text(entry_value))
-               for _name, spec in entries
-               if spec.kind not in (list, dict)
-               for entry_value in [spec.default]]
-    return max(names + [1]), max(scalars + [1])
+    if is_last:
+        return prefix + TREE_LAST_BRANCH, prefix + TREE_INDENT
+    return prefix + TREE_BRANCH, prefix + TREE_CONTINUATION
+
+
+def _append_metadata(lines: list[str], prefix: str, entries: list[str],
+                     has_siblings: bool = False) -> None:
+    """@brief Append parameter metadata as fixed-depth tree children.
+    @details O(N) emission; each entry renders exactly one four-character
+    indentation unit below the owning parameter with the standard `├── `
+    connector, or `└── ` for the last entry when no later sibling follows so
+    the tree stays strictly recursive. Entry text is emitted verbatim with no
+    name-based padding.
+    @param lines {list[str]} Output line accumulator.
+    @param prefix {str} Depth prefix owned by the parameter children.
+    @param entries {list[str]} Metadata texts in display order.
+    @param has_siblings {bool} True when later siblings follow the metadata.
+    @return {None} Appends rendered lines.
+    @satisfies REQ-276, REQ-277
+    """
+    last_index = len(entries) - 1
+    for index, text in enumerate(entries):
+        closing = index == last_index and not has_siblings
+        connector = TREE_LAST_BRANCH if closing else TREE_BRANCH
+        lines.append(f"{prefix}{connector}{text}")
 
 
 def _values_array(lines: list[str], branch: str, child: str, name: str,
-                  item: Parameter, value: list[Any], path: str, nw: int) -> None:
+                  item: Parameter, value: list[Any], path: str) -> None:
     """@brief Append the --print rendering of one array parameter.
-    @details O(N); emits the count header with row or cell target syntax and
-    the Idx table, or the empty-list hint with a copy-pasteable append command.
+    @details O(N); emits the count header with row or cell target syntax and the
+    Idx table one depth level below the parameter, or the empty-list hint with a
+    copy-pasteable append command.
     @param lines {list[str]} Output line accumulator.
     @param branch {str} Tree connector prefix of the parameter line.
-    @param child {str} Continuation prefix used to indent the table.
+    @param child {str} Children depth prefix of the parameter.
     @param name {str} Parameter name printed verbatim as the path token.
     @param item {Parameter} Array element schema.
     @param value {list[Any]} Effective array value.
     @param path {str} Canonical colon path of the parameter.
-    @param nw {int} Sibling name column width.
     @return {None} Appends rendered lines.
-    @satisfies REQ-250, REQ-260, REQ-261, REQ-262
+    @satisfies REQ-250, REQ-260, REQ-261, REQ-262, REQ-276, REQ-278
     """
     count = len(value)
     if count == 0:
         lines.append(
-            f"{branch}{name:<{nw}} = (empty list — add row with: --set {path}:+ <value>)")
+            f"{branch}{name} = (empty list — add row with: --set {path}:+ <value>)")
         return
-    indent = child + "│" + " " * 3
     if _is_section(item):
         fields = list(item.fields)
         lines.append(
-            f"{branch}{name:<{nw}} = ({count} rows | cell target: {path}:<Idx>:<Field> | add: :+)")
+            f"{branch}{name} = ({count} rows | cell target: {path}:<Idx>:<Field> | add: :+)")
         rows = [[str(index)] + [_scalar_text(row.get(field_name)) for field_name in fields]
                 for index, row in enumerate(value)]
-        lines.extend(indent + line for line in table(["Idx", *fields], rows))
+        lines.extend(child + line for line in table(["Idx", *fields], rows))
         return
     lines.append(
-        f"{branch}{name:<{nw}} = ({count} items | row target: {path}:<Idx> | add: :+)")
-    rows = [[str(index), _scalar_text(item)] for index, item in enumerate(value)]
-    lines.extend(indent + line for line in table(["Idx", "Value"], rows))
+        f"{branch}{name} = ({count} items | row target: {path}:<Idx> | add: :+)")
+    rows = [[str(index), _scalar_text(entry)] for index, entry in enumerate(value)]
+    lines.extend(child + line for line in table(["Idx", "Value"], rows))
 
 
 def _values_map(lines: list[str], branch: str, child: str, name: str,
-                value: dict[str, Any], path: str, nw: int) -> None:
+                value: dict[str, Any], path: str) -> None:
     """@brief Append the --print rendering of one dynamic map parameter.
     @details O(N); emits the entry-count header with key target syntax and the
-    Key/Value table, or the empty-map hint with a copy-pasteable set command.
+    Key/Value table one depth level below the parameter, or the empty-map hint
+    with a copy-pasteable set command.
     @param lines {list[str]} Output line accumulator.
     @param branch {str} Tree connector prefix of the parameter line.
-    @param child {str} Continuation prefix used to indent the table.
+    @param child {str} Children depth prefix of the parameter.
     @param name {str} Parameter name printed verbatim as the path token.
     @param value {dict[str, Any]} Effective map value.
     @param path {str} Canonical colon path of the parameter.
-    @param nw {int} Sibling name column width.
     @return {None} Appends rendered lines.
-    @satisfies REQ-250, REQ-259, REQ-262
+    @satisfies REQ-250, REQ-259, REQ-262, REQ-276, REQ-278
     """
     if not value:
         lines.append(
-            f"{branch}{name:<{nw}} = (empty map — set key with: --set {path}:<Key> <value>)")
+            f"{branch}{name} = (empty map — set key with: --set {path}:<Key> <value>)")
         return
     lines.append(
-        f"{branch}{name:<{nw}} = ({len(value)} entries | key target: {path}:<Key>)")
-    indent = child + "│" + " " * 3
-    rows = [[_scalar_text(key), _scalar_text(item)] for key, item in value.items()]
-    lines.extend(indent + line for line in table(["Key", "Value"], rows))
+        f"{branch}{name} = ({len(value)} entries | key target: {path}:<Key>)")
+    rows = [[_scalar_text(key), _scalar_text(entry)] for key, entry in value.items()]
+    lines.extend(child + line for line in table(["Key", "Value"], rows))
 
 
 def _values_node(lines: list[str], name: str, spec: Parameter, value: Any,
                  prefix: str, tokens: tuple[str, ...], is_last: bool,
-                 widths: tuple[int, int] = (0, 0), file_path: Path | None = None) -> None:
+                 file_path: Path | None = None) -> None:
     """@brief Append the --print rendering of one configuration node.
-    @details O(subtree); sections recurse with [Path: ...] badges, arrays and
-    maps delegate to their renderers, and scalars plus selections print the
-    value with the default or custom annotation; selection values add a table
-    and the exact set command hint.
+    @details O(subtree); sections recurse over their fields with the node child
+    prefix, arrays and maps delegate to their renderers, and scalars plus
+    selections print the value with the default or custom annotation; selection
+    values add a table one depth level below the parameter. Indentation derives
+    only from depth (REQ-275) and no name or value is padded (REQ-276).
     @param lines {list[str]} Output line accumulator.
     @param name {str} Node name printed verbatim as its CLI path token.
     @param spec {Parameter} Schema node.
@@ -679,41 +723,35 @@ def _values_node(lines: list[str], name: str, spec: Parameter, value: Any,
     @param prefix {str} Tree prefix inherited from the parent section.
     @param tokens {tuple[str, ...]} Canonical path tokens including the scope.
     @param is_last {bool} Selects the └── connector.
-    @param widths {tuple[int, int]} Sibling name and scalar column widths.
     @param file_path {Path | None} Scope file shown on scope-level badges.
     @return {None} Appends rendered lines.
-    @satisfies REQ-250, REQ-257, REQ-258, REQ-259
+    @satisfies REQ-250, REQ-257, REQ-258, REQ-259, REQ-275, REQ-276, REQ-278, REQ-279
     """
-    branch = prefix + ("└── " if is_last else "├── ")
-    child = prefix + ("    " if is_last else "│   ")
+    branch, child = _tree_prefix(prefix, is_last)
     path = ":".join(tokens)
-    nw, vw = widths
     if _is_section(spec):
         extra = f" - [File: {file_path}]" if file_path else ""
         lines.append(f"{branch}{name}{extra}  [Path: {path}]")
-        lines.append(child + "│")
         entries = list(spec.fields.items())
-        child_widths = _values_widths(entries)
         for index, (key, field_spec) in enumerate(entries):
             _values_node(lines, key, field_spec, (value or {}).get(key), child,
-                         tokens + (key,), index == len(entries) - 1, child_widths)
+                         tokens + (key,), index == len(entries) - 1)
         return
     if spec.kind is list and spec.item is not None:
-        _values_array(lines, branch, child, name, spec.item, value or [], path, nw)
+        _values_array(lines, branch, child, name, spec.item, value or [], path)
         return
     if spec.kind is dict and spec.item is not None:
-        _values_map(lines, branch, child, name, value or {}, path, nw)
+        _values_map(lines, branch, child, name, value or {}, path)
         return
     note = _default_note(value, spec)
     if spec.choices:
         note = note[:-1] + f" | set: {path} <Value>)"
-        lines.append(f"{branch}{name:<{nw}} = {_scalar_text(value):<{vw}}  {note}")
-        indent = child + "│" + " " * 3
+        lines.append(f"{branch}{name} = {_scalar_text(value)}  {note}")
         rows = [["[*]" if value == option else "[ ]", option]
                 for option, _meaning in spec.choices]
-        lines.extend(indent + line for line in table(["Sel", "Value"], rows))
+        lines.extend(child + line for line in table(["Sel", "Value"], rows))
         return
-    lines.append(f"{branch}{name:<{nw}} = {_scalar_text(value):<{vw}}  {note}")
+    lines.append(f"{branch}{name} = {_scalar_text(value)}  {note}")
 
 
 def render_values_tree(values: dict[str, dict[str, Any]],
@@ -724,12 +762,15 @@ def render_values_tree(values: dict[str, dict[str, Any]],
     header plus every scope; with root_path prints only that subtree. Sections
     carry canonical [Path: ...] badges, scalars carry default or custom
     annotations, and arrays, maps, and selections render as actionable tables.
+    Indentation derives only from node depth with four characters per level
+    (REQ-275) and no node name or value is padded (REQ-276).
     @param values {dict[str, dict[str, Any]]} Effective values per scope.
     @param paths {dict[str, Path] | None} Scope files shown on scope badges.
     @param root_path {str | None} Optional colon path restricting the output.
     @return {str} Unicode tree without trailing newline.
     @throws ValueError Invalid root_path.
-    @satisfies DES-009, REQ-250, REQ-257, REQ-258, REQ-259, REQ-260, REQ-261, REQ-262
+    @satisfies DES-009, REQ-250, REQ-257, REQ-258, REQ-259, REQ-260, REQ-261,
+        REQ-262, REQ-275, REQ-276, REQ-278, REQ-279
     """
     lines: list[str] = []
     if root_path is None:
@@ -750,92 +791,96 @@ def render_values_tree(values: dict[str, dict[str, Any]],
 
 
 def _params_node(lines: list[str], name: str, spec: Parameter, prefix: str,
-                 tokens: tuple[str, ...], is_last: bool, nw: int | None = None) -> None:
+                 tokens: tuple[str, ...], is_last: bool) -> None:
     """@brief Append the --params documentation rendering of one node.
     @details O(subtree); prints the '[<type and constraints>] <description>'
-    header, the Default and Set command lines with full canonical paths,
-    allowed-value and item-schema tables, array and map manipulation command
-    sets, and recurses into sections.
+    header, renders every metadata line and table as children exactly one
+    four-character depth level deeper with standard `├── `/`└── ` connectors,
+    and recurses into sections so child parameters nest under their parent.
+    Indentation derives only from depth (REQ-275) and no name or value is
+    padded (REQ-276).
     @param lines {list[str]} Output line accumulator.
     @param name {str} Node name printed verbatim as its CLI path token.
     @param spec {Parameter} Schema node.
     @param prefix {str} Tree prefix inherited from the parent section.
     @param tokens {tuple[str, ...]} Canonical path tokens including the scope.
     @param is_last {bool} Selects the └── connector.
-    @param nw {int | None} Sibling name width assigned by the parent section.
     @return {None} Appends rendered lines.
-    @satisfies REQ-251, REQ-263, REQ-264
+    @satisfies REQ-251, REQ-263, REQ-264, REQ-275, REQ-276, REQ-277, REQ-278, REQ-279
     """
-    branch = prefix + ("└── " if is_last else "├── ")
-    child = prefix + ("    " if is_last else "│   ")
+    branch, child = _tree_prefix(prefix, is_last)
     path = ":".join(tokens)
     label = _params_type_label(spec)
     if _is_section(spec):
-        badge = f"  [Path: {path}]" if len(tokens) > 1 else f"  [Path: {path}]"
         shown = f" - [{label}] {spec.description}" if len(tokens) > 1 else f" - {spec.description}"
-        lines.append(f"{branch}{name:<{nw or 0}}{shown}{badge}")
-        lines.append(child + "│")
+        lines.append(f"{branch}{name}{shown}  [Path: {path}]")
         entries = list(spec.fields.items())
-        child_nw = max(len(key) for key, _spec in entries)
-        meta = child + "│" + " " * (child_nw + 6)
         block = json.dumps({key: field_spec.default
                             for key, field_spec in spec.fields.items()},
                            ensure_ascii=False)
-        lines.append(f"{meta}├── Full overwrite : --set {path} {_command_arg(block, 'json')}")
-        lines.append(f"{meta}└── Reset block    : --unset {path}")
+        _append_metadata(lines, child, [
+            f"Full overwrite : --set {path} {_command_arg(block, 'json')}",
+            f"Reset block    : --unset {path}",
+        ], has_siblings=bool(entries))
         for index, (key, field_spec) in enumerate(entries):
             _params_node(lines, key, field_spec, child, tokens + (key,),
-                         index == len(entries) - 1, child_nw)
+                         index == len(entries) - 1)
         return
-    name_width = nw if nw is not None else len(name)
-    meta = child + "│" + " " * (name_width + 6)
-    lines.append(f"{branch}{name:<{name_width}} - [{label}] {spec.description}")
+    lines.append(f"{branch}{name} - [{label}] {spec.description}")
     if spec.kind is list and spec.item is not None:
-        _params_array(lines, meta, path, spec, spec.item)
+        _params_array(lines, child, path, spec, spec.item)
         return
     if spec.kind is dict and spec.item is not None:
         item_example = _command_arg(
             spec.item.example or "value",
             "str" if spec.item.kind is str else "json")
         block = _command_arg(spec.example or '{"KEY": "value"}', 'json')
-        lines.append(f"{meta}├── Set/Add key    : --set {path}:<KEY> {item_example}")
-        lines.append(f"{meta}├── Remove key     : --unset {path}:<KEY>")
-        lines.append(f"{meta}├── Full overwrite : --set {path} {block}")
-        lines.append(f"{meta}└── Clear map      : --unset {path}")
+        _append_metadata(lines, child, [
+            f"Set/Add key    : --set {path}:<KEY> {item_example}",
+            f"Remove key     : --unset {path}:<KEY>",
+            f"Full overwrite : --set {path} {block}",
+            f"Clear map      : --unset {path}",
+        ])
         return
     if spec.choices:
         rows = [[option, "Yes" if option == spec.default else "No", meaning]
                 for option, meaning in spec.choices]
-        lines.append(f"{meta}├── Allowed Values :")
-        lines.extend(meta + "│   " + line
+        lines.append(f"{child}{TREE_BRANCH}Allowed Values :")
+        lines.extend(child + TREE_CONTINUATION + line
                      for line in table(["Value", "Default", "Meaning"], rows))
         example = spec.example or spec.choices[-1][0]
-        lines.append(f"{meta}├── Set cmd   : --set {path} {_command_arg(example, 'raw')}")
-        lines.append(f"{meta}└── Reset cmd : --unset {path}")
+        _append_metadata(lines, child, [
+            f"Set cmd   : --set {path} {_command_arg(example, 'raw')}",
+            f"Reset cmd : --unset {path}",
+        ])
         return
-    lines.append(
-        f"{meta}├── Default : {_scalar_text(spec.default)} (restored via: --unset {path})")
     style = "str" if spec.kind is str else "raw"
-    lines.append(f"{meta}└── Set cmd : --set {path} {_command_arg(spec.example, style)}")
+    _append_metadata(lines, child, [
+        f"Default : {_scalar_text(spec.default)} (restored via: --unset {path})",
+        f"Set cmd : --set {path} {_command_arg(spec.example, style)}",
+    ])
 
 
-def _params_array(lines: list[str], meta: str, path: str, spec: Parameter,
+def _params_array(lines: list[str], prefix: str, path: str, spec: Parameter,
                   item: Parameter) -> None:
     """@brief Append the --params documentation of one array parameter.
-    @details O(item schema); object arrays add the Item Schema table and the
-    complete append, insert, update, reset, replace, delete, overwrite, and
-    clear command set with full canonical paths.
+    @details O(item schema); object arrays add the Item Schema table one depth
+    level below its labelled entry and the complete append, insert, update,
+    reset, replace, delete, overwrite, and clear command set. Every entry is a
+    fixed-depth child of the owning parameter with standard connectors.
     @param lines {list[str]} Output line accumulator.
-    @param meta {str} Metadata alignment prefix of the parameter.
+    @param prefix {str} Depth prefix owned by the parameter children.
     @param path {str} Canonical colon path of the array parameter.
     @param spec {Parameter} Array schema node owning the whole-value example.
     @param item {Parameter} Array element schema.
     @return {None} Appends rendered lines.
-    @satisfies REQ-251, REQ-264
+    @satisfies REQ-251, REQ-264, REQ-277, REQ-278
     """
     style = "str" if item.kind is str else "json"
     item_example = _command_arg(item.example, style)
     whole = _command_arg(spec.example or f"[{item.example}]", "json")
+    commands = [f"Add new row    : --set {path}:+ {item_example}",
+                f"Insert row idx : --set {path}:insert:0 {item_example}"]
     if _is_section(item):
         fields = list(item.fields)
         rows = []
@@ -847,35 +892,31 @@ def _params_array(lines: list[str], meta: str, path: str, spec: Parameter,
                                    "str" if field_spec.kind is str else "raw")
             rows.append([field_name, f"[{_params_type_label(field_spec)}]",
                          default, f"{field_spec.description} (e.g., {example})"])
-        lines.append(f"{meta}├── Item Schema    :")
-        lines.extend(meta + "│   " + line for line in table(
+        lines.append(f"{prefix}{TREE_BRANCH}Item Schema    :")
+        lines.extend(prefix + TREE_CONTINUATION + line for line in table(
             ["Field", "Type & Constraints", "Default / Req", "Description & Example"], rows))
-        lines.append(f"{meta}├── Add new row    : --set {path}:+ {item_example}")
-        lines.append(f"{meta}├── Insert row idx : --set {path}:insert:0 {item_example}")
-        lines.append(f"{meta}├── Update cell    : --set {path}:0:{fields[0]} "
-                     f"{_command_arg(item.fields[fields[0]].example, style)}")
-        lines.append(f"{meta}├── Reset cell     : --unset {path}:0:{fields[0]}")
-        lines.append(f"{meta}├── Replace row    : --set {path}:0 {item_example}")
-        lines.append(f"{meta}├── Delete row idx : --unset {path}:0 (auto re-indexes list)")
-        lines.append(f"{meta}├── Full overwrite : --set {path} {whole}")
-        lines.append(f"{meta}└── Clear all rows : --unset {path}")
-        return
-    lines.append(f"{meta}├── Add new row    : --set {path}:+ {item_example}")
-    lines.append(f"{meta}├── Insert row idx : --set {path}:insert:0 {item_example}")
-    lines.append(f"{meta}├── Update row idx : --set {path}:0 {item_example}")
-    lines.append(f"{meta}├── Delete row idx : --unset {path}:0 (auto re-indexes list)")
-    lines.append(f"{meta}├── Full overwrite : --set {path} {whole}")
-    lines.append(f"{meta}└── Clear all rows : --unset {path}")
+        commands += [
+            f"Update cell    : --set {path}:0:{fields[0]} "
+            f"{_command_arg(item.fields[fields[0]].example, style)}",
+            f"Reset cell     : --unset {path}:0:{fields[0]}",
+            f"Replace row    : --set {path}:0 {item_example}",
+        ]
+    commands += [f"Delete row idx : --unset {path}:0 (auto re-indexes list)",
+                 f"Full overwrite : --set {path} {whole}",
+                 f"Clear all rows : --unset {path}"]
+    _append_metadata(lines, prefix, commands)
 
 
 def render_params_tree(root_path: str | None = None) -> str:
     """@brief Render the schema-derived parameter documentation tree.
     @details O(N); without root_path prints the whole Application_Configuration
     documentation tree; with root_path prints only that subtree or parameter.
+    Indentation derives only from node depth with four characters per level
+    (REQ-275) and metadata renders as fixed-depth children (REQ-277).
     @param root_path {str | None} Optional colon path restricting the output.
     @return {str} Unicode tree without trailing newline.
     @throws ValueError Invalid root_path.
-    @satisfies REQ-251, REQ-263, REQ-264
+    @satisfies REQ-251, REQ-263, REQ-264, REQ-275, REQ-277, REQ-278, REQ-279
     """
     lines: list[str] = []
     if root_path is None:

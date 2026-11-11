@@ -16,13 +16,14 @@ tags: ["requirements", "srs", "galias"]
 ---
 
 # GAlias CLI Requirements
-**Version**: 1.48
+**Version**: 1.49
 **Author**: Francesco Rolando
-**Date**: 2026-11-10
+**Date**: 2026-11-11
 
 ## Revision History
 | Date | Version | Change Summary |
 |------|---------|----------------|
+| 2026-11-11 | 1.49 | Replaced name-length-driven padding in `--print`/`--params` tree rendering with fixed four-character depth indentation, metadata children rendered through standard connectors, and table indent derived from the owning node (REQ-275..REQ-279). |
 | 2026-11-10 | 1.48 | Expanded the schema-driven configuration CLI with `--print`/`--params` subtree paths, annotated tree rendering with default/custom badges and typed tables, `append`/`insert`/row/cell/map-key path tokens, global auto-initialization, and strict stdout/stderr and exit-code contracts (REQ-097, REQ-245, REQ-250, REQ-251, REQ-252, REQ-254, REQ-257..REQ-274). |
 | 2026-11-10 | 1.47 | Renamed the Italian-derived `foresta.py` module to `forest.py` (CPT-008) and mandated English-only Python identifier naming under `src/` (REQ-256). |
 | 2026-11-10 | 1.46 | Replaced configuration normalization with schema-driven hierarchical CLI management, raw/tree output, typed parameter discovery with input examples, and mandatory CLI synchronization (DES-010, REQ-014, REQ-015, REQ-097, REQ-207, REQ-242..REQ-255). |
@@ -379,6 +380,11 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-272**: MUST create the missing global configuration directory tree and `config.json` initialized with schema defaults before executing any configuration command.
 - **REQ-273**: MUST print valid `--get`, `--print`, `--print-raw`, and `--params` output to stdout with exit status 0 and error diagnostics to stderr with exit status 1.
 - **REQ-274**: MUST store and display every configuration value, including credentials and API keys, in plain text without masking across `--print`, `--print-raw`, and `--get`.
+- **REQ-275**: MUST indent `--print` and `--params` tree output by exactly four characters per node depth level, independent of node name, value, and metadata text lengths.
+- **REQ-276**: MUST NOT pad `--print` or `--params` node names, values, or metadata prefixes to any computed column width.
+- **REQ-277**: MUST render each parameter metadata entry (`Default`, `Set cmd`, `Allowed Values`, `Item Schema`, command sets, `Full overwrite`, `Reset block`) as a child of that parameter one depth level deeper using `├──` or `└──` connectors.
+- **REQ-278**: MUST render `--print` and `--params` tables one depth level below their owning parameter or labelled metadata entry.
+- **REQ-279**: MUST nest child parameters under their parent section node at exactly one additional depth level with `├──` or `└──` connectors.
 
 ### 3.3 Project File Structure
 ```
@@ -512,4 +518,9 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-271** evidence: `src/git_alias/configuration.py` `_assign_confirmation` (L913-941), `_overwrite_confirmation` (L943-959), and `_unset_confirmation` (L961-996) printed by `execute` after each successful mutation.
 - **REQ-272** evidence: `src/git_alias/configuration.py` `_bootstrap_global` (L461-474) invoked first in `execute` (L1003) writing schema defaults atomically when `config.json` is missing.
 - **REQ-273** evidence: `src/git_alias/core.py` `main` (L5938-6041) catching configuration failures and printing `Configuration error: ...` to stderr with `sys.exit(1)` while `configuration.execute` writes valid output to stdout.
-- **REQ-274** evidence: `src/git_alias/configuration.py` `_scalar_text` (L476-493) rendering every value unmasked and `print_raw` (L893-911) emitting exact stored bytes.
+- **REQ-274** evidence: `src/git_alias/configuration.py` `_scalar_text` rendering every value unmasked and `print_raw` emitting exact stored bytes.
+- **REQ-275** evidence: `src/git_alias/configuration.py` `_tree_prefix` resolving the four-character branch and child prefixes consumed by `_values_node` and `_params_node` without any width input.
+- **REQ-276** evidence: `src/git_alias/configuration.py` `_values_node`, `_values_array`, `_values_map`, `_params_node`, and `_params_array` emit node names, values, and metadata text without padding fields.
+- **REQ-277** evidence: `src/git_alias/configuration.py` `_append_metadata` rendering every parameter metadata entry as a `├──`/`└──` child of the owning parameter.
+- **REQ-278** evidence: `src/git_alias/configuration.py` `_values_array`, `_values_map`, `_params_node`, and `_params_array` indenting table rows with the child prefix of the owning node or labelled entry.
+- **REQ-279** evidence: `src/git_alias/configuration.py` `_values_node` and `_params_node` recursing over schema fields with the parent child prefix.

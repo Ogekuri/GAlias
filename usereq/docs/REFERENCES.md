@@ -33,7 +33,7 @@ import sys
 
 ---
 
-# configuration.py | Python | 1074L | 37 symbols | 9 imports | 50 comments
+# configuration.py | Python | 1115L | 42 symbols | 9 imports | 63 comments
 > Path: `src/git_alias/configuration.py`
 
 ## Imports
@@ -248,42 +248,68 @@ support both constructs for future fields.
 - @return {str} Copy-pasteable shell argument.
 - @satisfies REQ-252, REQ-263, REQ-264
 
-### fn `def _values_widths(entries: list[tuple[str, Parameter]]) -> tuple[int, int]` `priv` (L590-604)
-- @brief Compute sibling name and scalar value column widths.
-- @details O(N) sibling scan; complex containers contribute names only so scalar annotations align across the section.
-- @param entries {list[tuple[str, Parameter]]} Sibling name and schema pairs.
-- @return {tuple[int, int]} Name width and scalar display width, minimum 1.
+- var `TREE_INDENT = "    "` (L594)
+- @brief Fixed four-character indentation unit of one tree depth level.
+- @details Every rendered tree node adds exactly this unit below its parent,
+so indentation derives exclusively from node depth (REQ-275).
+- @satisfies REQ-275
+- var `TREE_CONTINUATION = "│   "` (L600)
+- @brief Continuation prefix rendered below a non-last tree node.
+- @details Keeps the ancestor vertical guide above later siblings; equal in
+width to TREE_INDENT so sibling alignment stays depth-derived (REQ-275).
+- @satisfies REQ-275
+- var `TREE_BRANCH = "├── "` (L604)
+- @brief Connector prefix of a tree node followed by siblings.
+- @satisfies REQ-277, REQ-279
+- var `TREE_LAST_BRANCH = "└── "` (L608)
+- @brief Connector prefix of the last tree node among its siblings.
+- @satisfies REQ-277, REQ-279
+### fn `def _tree_prefix(prefix: str, is_last: bool) -> tuple[str, str]` `priv` (L611-627)
+- @brief Resolve the branch and child prefixes of one tree node.
+- @details O(1) concatenation; every node adds exactly one four-character indentation unit below its parent using the standard `├── ` or `└── ` connector for the node line and `│ ` or four blanks for its children. The result depends only on the ancestor prefix and the sibling position, never on node name, value, or metadata text lengths.
+- @param prefix {str} Ancestor continuation prefix.
+- @param is_last {bool} Selects the `└── ` connector.
+- @return {tuple[str, str]} Node branch prefix and its children depth prefix.
+- @satisfies REQ-275, REQ-276
 
-### fn `def _values_array(lines: list[str], branch: str, child: str, name: str,` `priv` (L605-640)
+### fn `def _append_metadata(lines: list[str], prefix: str, entries: list[str],` `priv` (L628-649)
+- @brief Append parameter metadata as fixed-depth tree children.
+- @details O(N) emission; each entry renders exactly one four-character indentation unit below the owning parameter with the standard `├── ` connector, or `└── ` for the last entry when no later sibling follows so the tree stays strictly recursive. Entry text is emitted verbatim with no name-based padding.
+- @param lines {list[str]} Output line accumulator.
+- @param prefix {str} Depth prefix owned by the parameter children.
+- @param entries {list[str]} Metadata texts in display order.
+- @param has_siblings {bool} True when later siblings follow the metadata.
+- @return {None} Appends rendered lines.
+- @satisfies REQ-276, REQ-277
+
+### fn `def _values_array(lines: list[str], branch: str, child: str, name: str,` `priv` (L650-684)
 - @brief Append the --print rendering of one array parameter.
-- @details O(N); emits the count header with row or cell target syntax and the Idx table, or the empty-list hint with a copy-pasteable append command.
+- @details O(N); emits the count header with row or cell target syntax and the Idx table one depth level below the parameter, or the empty-list hint with a copy-pasteable append command.
 - @param lines {list[str]} Output line accumulator.
 - @param branch {str} Tree connector prefix of the parameter line.
-- @param child {str} Continuation prefix used to indent the table.
+- @param child {str} Children depth prefix of the parameter.
 - @param name {str} Parameter name printed verbatim as the path token.
 - @param item {Parameter} Array element schema.
 - @param value {list[Any]} Effective array value.
 - @param path {str} Canonical colon path of the parameter.
-- @param nw {int} Sibling name column width.
 - @return {None} Appends rendered lines.
-- @satisfies REQ-250, REQ-260, REQ-261, REQ-262
+- @satisfies REQ-250, REQ-260, REQ-261, REQ-262, REQ-276, REQ-278
 
-### fn `def _values_map(lines: list[str], branch: str, child: str, name: str,` `priv` (L641-666)
+### fn `def _values_map(lines: list[str], branch: str, child: str, name: str,` `priv` (L685-709)
 - @brief Append the --print rendering of one dynamic map parameter.
-- @details O(N); emits the entry-count header with key target syntax and the Key/Value table, or the empty-map hint with a copy-pasteable set command.
+- @details O(N); emits the entry-count header with key target syntax and the Key/Value table one depth level below the parameter, or the empty-map hint with a copy-pasteable set command.
 - @param lines {list[str]} Output line accumulator.
 - @param branch {str} Tree connector prefix of the parameter line.
-- @param child {str} Continuation prefix used to indent the table.
+- @param child {str} Children depth prefix of the parameter.
 - @param name {str} Parameter name printed verbatim as the path token.
 - @param value {dict[str, Any]} Effective map value.
 - @param path {str} Canonical colon path of the parameter.
-- @param nw {int} Sibling name column width.
 - @return {None} Appends rendered lines.
-- @satisfies REQ-250, REQ-259, REQ-262
+- @satisfies REQ-250, REQ-259, REQ-262, REQ-276, REQ-278
 
-### fn `def _values_node(lines: list[str], name: str, spec: Parameter, value: Any,` `priv` (L667-718)
+### fn `def _values_node(lines: list[str], name: str, spec: Parameter, value: Any,` `priv` (L710-756)
 - @brief Append the --print rendering of one configuration node.
-- @details O(subtree); sections recurse with [Path: ...] badges, arrays and maps delegate to their renderers, and scalars plus selections print the value with the default or custom annotation; selection values add a table and the exact set command hint.
+- @details O(subtree); sections recurse over their fields with the node child prefix, arrays and maps delegate to their renderers, and scalars plus selections print the value with the default or custom annotation; selection values add a table one depth level below the parameter. Indentation derives only from depth (REQ-275) and no name or value is padded (REQ-276).
 - @param lines {list[str]} Output line accumulator.
 - @param name {str} Node name printed verbatim as its CLI path token.
 - @param spec {Parameter} Schema node.
@@ -291,54 +317,52 @@ support both constructs for future fields.
 - @param prefix {str} Tree prefix inherited from the parent section.
 - @param tokens {tuple[str, ...]} Canonical path tokens including the scope.
 - @param is_last {bool} Selects the └── connector.
-- @param widths {tuple[int, int]} Sibling name and scalar column widths.
 - @param file_path {Path | None} Scope file shown on scope-level badges.
 - @return {None} Appends rendered lines.
-- @satisfies REQ-250, REQ-257, REQ-258, REQ-259
+- @satisfies REQ-250, REQ-257, REQ-258, REQ-259, REQ-275, REQ-276, REQ-278, REQ-279
 
-### fn `def render_values_tree(values: dict[str, dict[str, Any]],` (L719-751)
+### fn `def render_values_tree(values: dict[str, dict[str, Any]],` (L757-792)
 - @brief Render the effective configuration as an annotated box tree.
-- @details O(N); without root_path prints the Application_Configuration root header plus every scope; with root_path prints only that subtree. Sections carry canonical [Path: ...] badges, scalars carry default or custom annotations, and arrays, maps, and selections render as actionable tables.
+- @details O(N); without root_path prints the Application_Configuration root header plus every scope; with root_path prints only that subtree. Sections carry canonical [Path: ...] badges, scalars carry default or custom annotations, and arrays, maps, and selections render as actionable tables. Indentation derives only from node depth with four characters per level (REQ-275) and no node name or value is padded (REQ-276).
 - @param values {dict[str, dict[str, Any]]} Effective values per scope.
 - @param paths {dict[str, Path] | None} Scope files shown on scope badges.
 - @param root_path {str | None} Optional colon path restricting the output.
 - @return {str} Unicode tree without trailing newline.
 - @throws ValueError Invalid root_path.
-- @satisfies DES-009, REQ-250, REQ-257, REQ-258, REQ-259, REQ-260, REQ-261, REQ-262
+- @satisfies DES-009, REQ-250, REQ-257, REQ-258, REQ-259, REQ-260, REQ-261, REQ-262, REQ-275, REQ-276, REQ-278, REQ-279
 
-### fn `def _params_node(lines: list[str], name: str, spec: Parameter, prefix: str,` `priv` (L752-821)
+### fn `def _params_node(lines: list[str], name: str, spec: Parameter, prefix: str,` `priv` (L793-863)
 - @brief Append the --params documentation rendering of one node.
-- @details O(subtree); prints the '[<type and constraints>] <description> header, the Default and Set command lines with full canonical paths, allowed-value and item-schema tables, array and map manipulation command sets, and recurses into sections.
+- @details O(subtree); prints the '[<type and constraints>] <description> header, renders every metadata line and table as children exactly one four-character depth level deeper with standard `├── `/`└── ` connectors, and recurses into sections so child parameters nest under their parent. Indentation derives only from depth (REQ-275) and no name or value is padded (REQ-276).
 - @param lines {list[str]} Output line accumulator.
 - @param name {str} Node name printed verbatim as its CLI path token.
 - @param spec {Parameter} Schema node.
 - @param prefix {str} Tree prefix inherited from the parent section.
 - @param tokens {tuple[str, ...]} Canonical path tokens including the scope.
 - @param is_last {bool} Selects the └── connector.
-- @param nw {int | None} Sibling name width assigned by the parent section.
 - @return {None} Appends rendered lines.
-- @satisfies REQ-251, REQ-263, REQ-264
+- @satisfies REQ-251, REQ-263, REQ-264, REQ-275, REQ-276, REQ-277, REQ-278, REQ-279
 
-### fn `def _params_array(lines: list[str], meta: str, path: str, spec: Parameter,` `priv` (L822-870)
+### fn `def _params_array(lines: list[str], prefix: str, path: str, spec: Parameter,` `priv` (L864-909)
 - @brief Append the --params documentation of one array parameter.
-- @details O(item schema); object arrays add the Item Schema table and the complete append, insert, update, reset, replace, delete, overwrite, and clear command set with full canonical paths.
+- @details O(item schema); object arrays add the Item Schema table one depth level below its labelled entry and the complete append, insert, update, reset, replace, delete, overwrite, and clear command set. Every entry is a fixed-depth child of the owning parameter with standard connectors.
 - @param lines {list[str]} Output line accumulator.
-- @param meta {str} Metadata alignment prefix of the parameter.
+- @param prefix {str} Depth prefix owned by the parameter children.
 - @param path {str} Canonical colon path of the array parameter.
 - @param spec {Parameter} Array schema node owning the whole-value example.
 - @param item {Parameter} Array element schema.
 - @return {None} Appends rendered lines.
-- @satisfies REQ-251, REQ-264
+- @satisfies REQ-251, REQ-264, REQ-277, REQ-278
 
-### fn `def render_params_tree(root_path: str | None = None) -> str` (L871-892)
+### fn `def render_params_tree(root_path: str | None = None) -> str` (L910-933)
 - @brief Render the schema-derived parameter documentation tree.
-- @details O(N); without root_path prints the whole Application_Configuration documentation tree; with root_path prints only that subtree or parameter.
+- @details O(N); without root_path prints the whole Application_Configuration documentation tree; with root_path prints only that subtree or parameter. Indentation derives only from node depth with four characters per level (REQ-275) and metadata renders as fixed-depth children (REQ-277).
 - @param root_path {str | None} Optional colon path restricting the output.
 - @return {str} Unicode tree without trailing newline.
 - @throws ValueError Invalid root_path.
-- @satisfies REQ-251, REQ-263, REQ-264
+- @satisfies REQ-251, REQ-263, REQ-264, REQ-275, REQ-277, REQ-278, REQ-279
 
-### fn `def print_raw(paths: dict[str, Path]) -> None` (L893-912)
+### fn `def print_raw(paths: dict[str, Path]) -> None` (L934-953)
 - @brief Emit exact stored bytes with identification on stderr only.
 - @details O(N) reads; missing files are reported and skipped. No decoding, JSON parsing, masking, reformatting, or added stdout newline.
 - @param paths {dict[str, Path]} Selected scope paths in output order.
@@ -346,7 +370,7 @@ support both constructs for future fields.
 - @throws OSError File read or output failure.
 - @satisfies REQ-097, REQ-249, REQ-274
 
-### fn `def _assign_confirmation(parts: list[str], spec: Parameter, value: Any,` `priv` (L913-942)
+### fn `def _assign_confirmation(parts: list[str], spec: Parameter, value: Any,` `priv` (L954-983)
 - @brief Build the English confirmation line for one --set mutation.
 - @details O(D) schema walks; row, cell, map-key, array, and map overwrites name the exact assigned target and index so output matches the --print identifiers.
 - @param parts {list[str]} Canonical path tokens of the mutation target.
@@ -356,7 +380,7 @@ support both constructs for future fields.
 - @return {str} Single-line English confirmation.
 - @satisfies REQ-245, REQ-267, REQ-271
 
-### fn `def _overwrite_confirmation(parts: list[str], spec: Parameter, value: Any) -> str` `priv` (L943-960)
+### fn `def _overwrite_confirmation(parts: list[str], spec: Parameter, value: Any) -> str` `priv` (L984-1001)
 - @brief Build the confirmation for a whole array or map overwrite.
 - @details O(1); reports the item or key count and the resulting index range.
 - @param parts {list[str]} Canonical path tokens of the overwritten container.
@@ -365,7 +389,7 @@ support both constructs for future fields.
 - @return {str} Single-line English confirmation.
 - @satisfies REQ-271
 
-### fn `def _unset_confirmation(parts: list[str], spec: Parameter,` `priv` (L961-997)
+### fn `def _unset_confirmation(parts: list[str], spec: Parameter,` `priv` (L1002-1038)
 - @brief Build the English confirmation line for one --unset mutation.
 - @details O(D) schema walks; row deletions report the contiguous re-indexing, cell resets name the restored property, and container clears print a WARNING that defaults apply again.
 - @param parts {list[str]} Canonical path tokens of the unset target.
@@ -374,7 +398,7 @@ support both constructs for future fields.
 - @return {str} Single-line English confirmation.
 - @satisfies REQ-247, REQ-269, REQ-271
 
-### fn `def execute(args: list[str], paths: dict[str, Path]) -> None` (L998-1075)
+### fn `def execute(args: list[str], paths: dict[str, Path]) -> None` (L1039-1116)
 - @brief Execute one standalone configuration command.
 - @details O(N) selected-scope processing. Bootstraps the missing global configuration file before every command; help and raw output avoid JSON reads; --print and --params accept one optional colon path restricting the tree; mutations validate fully before exactly one atomic write of the selected scope and print an English confirmation.
 - @param args {list[str]} Command plus operands, or command plus --help.
@@ -411,19 +435,24 @@ support both constructs for future fields.
 |`_type_label`|fn|priv|539-548|def _type_label(spec: Parameter) -> str|
 |`_params_type_label`|fn|priv|549-570|def _params_type_label(spec: Parameter) -> str|
 |`_command_arg`|fn|priv|571-589|def _command_arg(text: str, style: str = "str") -> str|
-|`_values_widths`|fn|priv|590-604|def _values_widths(entries: list[tuple[str, Parameter]]) ...|
-|`_values_array`|fn|priv|605-640|def _values_array(lines: list[str], branch: str, child: s...|
-|`_values_map`|fn|priv|641-666|def _values_map(lines: list[str], branch: str, child: str...|
-|`_values_node`|fn|priv|667-718|def _values_node(lines: list[str], name: str, spec: Param...|
-|`render_values_tree`|fn|pub|719-751|def render_values_tree(values: dict[str, dict[str, Any]],|
-|`_params_node`|fn|priv|752-821|def _params_node(lines: list[str], name: str, spec: Param...|
-|`_params_array`|fn|priv|822-870|def _params_array(lines: list[str], meta: str, path: str,...|
-|`render_params_tree`|fn|pub|871-892|def render_params_tree(root_path: str | None = None) -> str|
-|`print_raw`|fn|pub|893-912|def print_raw(paths: dict[str, Path]) -> None|
-|`_assign_confirmation`|fn|priv|913-942|def _assign_confirmation(parts: list[str], spec: Paramete...|
-|`_overwrite_confirmation`|fn|priv|943-960|def _overwrite_confirmation(parts: list[str], spec: Param...|
-|`_unset_confirmation`|fn|priv|961-997|def _unset_confirmation(parts: list[str], spec: Parameter,|
-|`execute`|fn|pub|998-1075|def execute(args: list[str], paths: dict[str, Path]) -> None|
+|`TREE_INDENT`|var|pub|594||
+|`TREE_CONTINUATION`|var|pub|600||
+|`TREE_BRANCH`|var|pub|604||
+|`TREE_LAST_BRANCH`|var|pub|608||
+|`_tree_prefix`|fn|priv|611-627|def _tree_prefix(prefix: str, is_last: bool) -> tuple[str...|
+|`_append_metadata`|fn|priv|628-649|def _append_metadata(lines: list[str], prefix: str, entri...|
+|`_values_array`|fn|priv|650-684|def _values_array(lines: list[str], branch: str, child: s...|
+|`_values_map`|fn|priv|685-709|def _values_map(lines: list[str], branch: str, child: str...|
+|`_values_node`|fn|priv|710-756|def _values_node(lines: list[str], name: str, spec: Param...|
+|`render_values_tree`|fn|pub|757-792|def render_values_tree(values: dict[str, dict[str, Any]],|
+|`_params_node`|fn|priv|793-863|def _params_node(lines: list[str], name: str, spec: Param...|
+|`_params_array`|fn|priv|864-909|def _params_array(lines: list[str], prefix: str, path: st...|
+|`render_params_tree`|fn|pub|910-933|def render_params_tree(root_path: str | None = None) -> str|
+|`print_raw`|fn|pub|934-953|def print_raw(paths: dict[str, Path]) -> None|
+|`_assign_confirmation`|fn|priv|954-983|def _assign_confirmation(parts: list[str], spec: Paramete...|
+|`_overwrite_confirmation`|fn|priv|984-1001|def _overwrite_confirmation(parts: list[str], spec: Param...|
+|`_unset_confirmation`|fn|priv|1002-1038|def _unset_confirmation(parts: list[str], spec: Parameter,|
+|`execute`|fn|pub|1039-1116|def execute(args: list[str], paths: dict[str, Path]) -> None|
 
 
 ---
