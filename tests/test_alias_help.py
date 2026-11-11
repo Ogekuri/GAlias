@@ -88,7 +88,7 @@ class AliasHelpTest(unittest.TestCase):
             entries.append(line.strip())
         flags = [line.split()[0] for line in entries if line.strip()]
         self.assertGreaterEqual(len(flags), 3)
-        self.assertEqual(flags[:6], ["--print-raw", "--print", "--params", "--set", "--unset", "--get"])
+        self.assertEqual(flags[:6], ["--print-raw", "--print", "--info", "--set", "--unset", "--get"])
         self.assertEqual(flags[6:8], ["--upgrade", "--uninstall"])
         self.assertIn("--help", flags)
 

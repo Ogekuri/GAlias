@@ -147,7 +147,7 @@ Files are created only by explicit mutations. These commands replace the former
 normalization command; no migration is performed.
 
 ```bash
-g --params
+g --info
 g --print
 g --print-raw
 g --print-raw Global
@@ -177,7 +177,7 @@ mutation atomically replaces only the selected file. Read commands never create
 configuration files.
 
 `--print` shows effective values as a tree: scalar options print as plain
-unquoted text and complex values render as box-drawing tables. `--params`
+unquoted text and complex values render as box-drawing tables. `--info`
 documents every path with its input type, a short description, allowed-value
 tables when constrained, and one input example. `--print-raw [Global|Local]`
 emits exact stored bytes; without a selector it concatenates global then local
@@ -248,7 +248,7 @@ Upgrade or uninstall the GAlias CLI:
 - `g --upgrade` / `galias --upgrade`: Reinstalls the tool from PyPI on Linux; `g --upgrade --develop` (or the equivalent `--dev`) reinstalls the newest tagged release from GitHub; on non-Linux platforms it prints the equivalent manual command. Add `--force` to force the download and a complete reinstallation through the uv options `--force --reinstall --refresh`. The same `--dev`/`--develop` flags have a different meaning on `major`/`minor`/`patch`, where they limit the release to the configured `develop` branch.
 - `g --uninstall` / `galias --uninstall`: Uninstalls the tool on Linux; on non-Linux platforms it prints the equivalent manual command.
 - `--set PATH VALUE`, `--unset PATH`, `--get PATH`: Manage a field or scope through colon-separated paths.
-- `--print`, `--print-raw [Global|Local]`, `--params`: Display effective values, exact file bytes, or typed parameter documentation.
+- `--print`, `--print-raw [Global|Local]`, `--info`: Display effective values, exact file bytes, or typed parameter documentation.
 - `g --ver` / `g --version` / `galias --ver` / `galias --version`: Prints the CLI version and the latest versions available on PyPI and GitHub.
 - `g --help` / `galias --help`: Prints management commands, configuration parameters, and the alias list; use `g --help <command>` for a single command.
 

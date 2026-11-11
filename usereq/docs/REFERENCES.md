@@ -234,7 +234,7 @@ support both constructs for future fields.
 - @satisfies REQ-251
 
 ### fn `def _params_type_label(spec: Parameter) -> str` `priv` (L549-570)
-- @brief Resolve the constrained type label used by --params headers.
+- @brief Resolve the constrained type label used by --info headers.
 - @details O(1); composes Array[...] and Map[String, ...] container labels and appends non-empty and boolean constraints to scalar bases.
 - @param spec {Parameter} Schema node.
 - @return {str} Bracketed English type and constraint label.
@@ -332,7 +332,7 @@ width to TREE_INDENT so sibling alignment stays depth-derived (REQ-275).
 - @satisfies DES-009, REQ-250, REQ-257, REQ-258, REQ-259, REQ-260, REQ-261, REQ-262, REQ-275, REQ-276, REQ-278, REQ-279
 
 ### fn `def _params_node(lines: list[str], name: str, spec: Parameter, prefix: str,` `priv` (L793-863)
-- @brief Append the --params documentation rendering of one node.
+- @brief Append the --info documentation rendering of one node.
 - @details O(subtree); prints the '[<type and constraints>] <description> header, renders every metadata line and table as children exactly one four-character depth level deeper with standard `├── `/`└── ` connectors, and recurses into sections so child parameters nest under their parent. Indentation derives only from depth (REQ-275) and no name or value is padded (REQ-276).
 - @param lines {list[str]} Output line accumulator.
 - @param name {str} Node name printed verbatim as its CLI path token.
@@ -344,7 +344,7 @@ width to TREE_INDENT so sibling alignment stays depth-derived (REQ-275).
 - @satisfies REQ-251, REQ-263, REQ-264, REQ-275, REQ-276, REQ-277, REQ-278, REQ-279
 
 ### fn `def _params_array(lines: list[str], prefix: str, path: str, spec: Parameter,` `priv` (L864-909)
-- @brief Append the --params documentation of one array parameter.
+- @brief Append the --info documentation of one array parameter.
 - @details O(item schema); object arrays add the Item Schema table one depth level below its labelled entry and the complete append, insert, update, reset, replace, delete, overwrite, and clear command set. Every entry is a fixed-depth child of the owning parameter with standard connectors.
 - @param lines {list[str]} Output line accumulator.
 - @param prefix {str} Depth prefix owned by the parameter children.
@@ -355,7 +355,7 @@ width to TREE_INDENT so sibling alignment stays depth-derived (REQ-275).
 - @satisfies REQ-251, REQ-264, REQ-277, REQ-278
 
 ### fn `def render_params_tree(root_path: str | None = None) -> str` (L910-933)
-- @brief Render the schema-derived parameter documentation tree.
+- @brief Render the schema-derived `--info` parameter documentation tree.
 - @details O(N); without root_path prints the whole Application_Configuration documentation tree; with root_path prints only that subtree or parameter. Indentation derives only from node depth with four characters per level (REQ-275) and metadata renders as fixed-depth children (REQ-277).
 - @param root_path {str | None} Optional colon path restricting the output.
 - @return {str} Unicode tree without trailing newline.
@@ -400,7 +400,7 @@ width to TREE_INDENT so sibling alignment stays depth-derived (REQ-275).
 
 ### fn `def execute(args: list[str], paths: dict[str, Path]) -> None` (L1039-1116)
 - @brief Execute one standalone configuration command.
-- @details O(N) selected-scope processing. Bootstraps the missing global configuration file before every command; help and raw output avoid JSON reads; --print and --params accept one optional colon path restricting the tree; mutations validate fully before exactly one atomic write of the selected scope and print an English confirmation.
+- @details O(N) selected-scope processing. Bootstraps the missing global configuration file before every command; help and raw output avoid JSON reads; --print and --info accept one optional colon path restricting the tree; mutations validate fully before exactly one atomic write of the selected scope and print an English confirmation.
 - @param args {list[str]} Command plus operands, or command plus --help.
 - @param paths {dict[str, Path]} Global and Local file destinations.
 - @return {None} Emits JSON, trees, raw bytes, help, or a confirmation.

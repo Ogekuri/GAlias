@@ -1,7 +1,7 @@
 """@brief Schema-driven GAlias configuration management.
 @details Owns configuration metadata, hierarchical JSON access, atomic
 persistence, global auto-initialization, and CLI rendering for --print-raw,
---print, --params, --set, --unset, and --get. Alias execution stays in core;
+--print, --info, --set, --unset, and --get. Alias execution stays in core;
 this module performs no subprocess execution and implements no legacy
 migration. All rendered text is English.
 @satisfies DES-010, REQ-014, REQ-242, REQ-243, REQ-253, REQ-272
@@ -120,7 +120,7 @@ TYPE_LABELS = {str: "String", int: "Integer", float: "Float", bool: "Boolean",
 COMMAND_HELP = {
     "--print-raw": "--print-raw [Global|Local]: emit exact file bytes; labels go to stderr.",
     "--print": "--print [PATH]: show the effective configuration tree, or only the PATH subtree.",
-    "--params": "--params [PATH]: show types, constraints, defaults, and ready-to-run commands.",
+    "--info": "--info [PATH]: show types, constraints, defaults, and ready-to-run commands.",
     "--set": "--set PATH VALUE: set a field, map key, row, or cell; ':append' or ':+' adds, ':insert:<Idx>' inserts.",
     "--unset": "--unset PATH: restore defaults, remove keys, delete rows, or reset cells.",
     "--get": "--get PATH: extract a value, row, cell, map key, or subtree as JSON.",
@@ -153,7 +153,7 @@ Examples:
   g --unset Local:default_commit_module
   g --unset Local
 The shell expands environment variables before invocation; values are stored
-exactly as received and are never evaluated as shell commands. Use --params for
+exactly as received and are never evaluated as shell commands. Use --info for
 per-field types, constraints, defaults, and copy-pasteable commands. --get
 resolves absent top-level keys from defaults. --print-raw shows only bytes on
 disk. Global storage: $HOME/.config/galias/config.json, auto-created with
@@ -547,7 +547,7 @@ def _type_label(spec: Parameter) -> str:
 
 
 def _params_type_label(spec: Parameter) -> str:
-    """@brief Resolve the constrained type label used by --params headers.
+    """@brief Resolve the constrained type label used by --info headers.
     @details O(1); composes Array[...] and Map[String, ...] container labels
     and appends non-empty and boolean constraints to scalar bases.
     @param spec {Parameter} Schema node.
@@ -792,7 +792,7 @@ def render_values_tree(values: dict[str, dict[str, Any]],
 
 def _params_node(lines: list[str], name: str, spec: Parameter, prefix: str,
                  tokens: tuple[str, ...], is_last: bool) -> None:
-    """@brief Append the --params documentation rendering of one node.
+    """@brief Append the --info documentation rendering of one node.
     @details O(subtree); prints the '[<type and constraints>] <description>'
     header, renders every metadata line and table as children exactly one
     four-character depth level deeper with standard `├── `/`└── ` connectors,
@@ -863,7 +863,7 @@ def _params_node(lines: list[str], name: str, spec: Parameter, prefix: str,
 
 def _params_array(lines: list[str], prefix: str, path: str, spec: Parameter,
                   item: Parameter) -> None:
-    """@brief Append the --params documentation of one array parameter.
+    """@brief Append the --info documentation of one array parameter.
     @details O(item schema); object arrays add the Item Schema table one depth
     level below its labelled entry and the complete append, insert, update,
     reset, replace, delete, overwrite, and clear command set. Every entry is a
@@ -908,7 +908,7 @@ def _params_array(lines: list[str], prefix: str, path: str, spec: Parameter,
 
 
 def render_params_tree(root_path: str | None = None) -> str:
-    """@brief Render the schema-derived parameter documentation tree.
+    """@brief Render the schema-derived `--info` parameter documentation tree.
     @details O(N); without root_path prints the whole Application_Configuration
     documentation tree; with root_path prints only that subtree or parameter.
     Indentation derives only from node depth with four characters per level
@@ -1040,7 +1040,7 @@ def execute(args: list[str], paths: dict[str, Path]) -> None:
     """@brief Execute one standalone configuration command.
     @details O(N) selected-scope processing. Bootstraps the missing global
     configuration file before every command; help and raw output avoid JSON
-    reads; --print and --params accept one optional colon path restricting the
+    reads; --print and --info accept one optional colon path restricting the
     tree; mutations validate fully before exactly one atomic write of the
     selected scope and print an English confirmation.
     @param args {list[str]} Command plus operands, or command plus --help.
@@ -1062,10 +1062,10 @@ def execute(args: list[str], paths: dict[str, Path]) -> None:
             raise ValueError(COMMAND_HELP[command])
         print_raw({scope: paths[scope] for scope in (operands or list(SCHEMA))})
         return
-    if command in ("--print", "--params"):
+    if command in ("--print", "--info"):
         if len(operands) > 1:
             raise ValueError(COMMAND_HELP[command])
-        if command == "--params":
+        if command == "--info":
             print(render_params_tree(operands[0] if operands else None))
             return
         values = {scope: defaults(scope) | read_scope(paths[scope], scope)

@@ -274,7 +274,7 @@ def test_scope_object_and_nested_access(sandbox, capsys):
 
 
 @pytest.mark.parametrize("args", [
-    ["--set"], ["--get"], ["--unset"], ["--params", "extra"], ["--print", "extra"],
+    ["--set"], ["--get"], ["--unset"], ["--info", "extra"], ["--print", "extra"],
     ["--print-raw", "bad"], ["--get", "Local:work", "extra"],
     ["--set", "Local:ver_rules", "{"], ["--set", "Local", '{"work":true}'],
     ["--set", "Local:ver_rules:999:pattern", "VERSION"],
@@ -365,7 +365,7 @@ def test_raw_local_missing_and_commands_bootstrap_global(sandbox, monkeypatch, c
         assert "zero-based" in capsys.readouterr().out
         core.main(["--help", command], check_updates=False)
         assert "shell-quoted" in capsys.readouterr().out
-    core.main(["--params"], check_updates=False)
+    core.main(["--info"], check_updates=False)
     capsys.readouterr()
     core.main(["--print"], check_updates=False)
     capsys.readouterr()
@@ -553,7 +553,7 @@ def test_print_annotations_subtrees_and_empty_hints(sandbox, capsys):
 
 
 def test_params_subtree_commands_and_schema_table(sandbox, capsys):
-    """@brief Verify --params subtree filtering and copy-pasteable commands.
+    """@brief Verify --info subtree filtering and copy-pasteable commands.
     @details Level 2; the ver_rules subtree documents the Item Schema table
     and every row manipulation command with full canonical paths; scalar
     parameters document the default line and the restore command.
@@ -563,7 +563,7 @@ def test_params_subtree_commands_and_schema_table(sandbox, capsys):
     @satisfies REQ-252, REQ-263, REQ-264
     """
     _files, _paths = sandbox
-    core.main(["--params", "Local:ver_rules"], check_updates=False)
+    core.main(["--info", "Local:ver_rules"], check_updates=False)
     documented = capsys.readouterr().out
     assert "Item Schema" in documented
     assert "--set Local:ver_rules:+" in documented
@@ -571,7 +571,7 @@ def test_params_subtree_commands_and_schema_table(sandbox, capsys):
     assert "--unset Local:ver_rules:0" in documented
     assert "--set Local:ver_rules:0:pattern" in documented
     assert "Application_Configuration" not in documented
-    core.main(["--params", "Global:edit_command"], check_updates=False)
+    core.main(["--info", "Global:edit_command"], check_updates=False)
     parameter = capsys.readouterr().out
     assert 'Default : "edit" (restored via: --unset Global:edit_command)' in parameter
     assert '--set Global:edit_command "vim -f"' in parameter

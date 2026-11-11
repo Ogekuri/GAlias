@@ -16,13 +16,14 @@ tags: ["requirements", "srs", "galias"]
 ---
 
 # GAlias CLI Requirements
-**Version**: 1.49
+**Version**: 1.50
 **Author**: Francesco Rolando
 **Date**: 2026-11-11
 
 ## Revision History
 | Date | Version | Change Summary |
 |------|---------|----------------|
+| 2026-11-11 | 1.50 | Renamed the configuration documentation command from `--params` to `--info`, keeping its schema-derived hierarchy, subtree filtering, metadata children, and tables (REQ-243, REQ-251, REQ-263, REQ-264, REQ-273, REQ-275, REQ-276, REQ-278). |
 | 2026-11-11 | 1.49 | Replaced name-length-driven padding in `--print`/`--params` tree rendering with fixed four-character depth indentation, metadata children rendered through standard connectors, and table indent derived from the owning node (REQ-275..REQ-279). |
 | 2026-11-10 | 1.48 | Expanded the schema-driven configuration CLI with `--print`/`--params` subtree paths, annotated tree rendering with default/custom badges and typed tables, `append`/`insert`/row/cell/map-key path tokens, global auto-initialization, and strict stdout/stderr and exit-code contracts (REQ-097, REQ-245, REQ-250, REQ-251, REQ-252, REQ-254, REQ-257..REQ-274). |
 | 2026-11-10 | 1.47 | Renamed the Italian-derived `foresta.py` module to `forest.py` (CPT-008) and mandated English-only Python identifier naming under `src/` (REQ-256). |
@@ -349,7 +350,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 
 ### 3.2.1 Configuration Command Interface
 - **REQ-242**: MUST derive configurable paths, types, descriptions, defaults, allowed values, and input examples from one shared schema covering every DES-006 key.
-- **REQ-243**: MUST expose `--print-raw`, `--print`, `--params`, `--set`, `--unset`, and `--get` as standalone management commands with exact operand validation and command-specific `--help`.
+- **REQ-243**: MUST expose `--print-raw`, `--print`, `--info`, `--set`, `--unset`, and `--get` as standalone management commands with exact operand validation and command-specific `--help`.
 - **REQ-244**: MUST address configuration using case-sensitive colon-separated paths rooted at `Global` or `Local`, with zero-based array indices and nested object field names.
 - **REQ-245**: MUST implement `--set PATH VALUE` assigning schema-validated scalar, object, array, and map values, casting string arguments to strict schema types and accepting complex values as one JSON argument.
 - **REQ-246**: MUST implement `--get PATH` by printing the selected effective scalar, array, object, or scope as JSON, resolving absent top-level keys from existing defaults.
@@ -357,7 +358,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-248**: MUST reject invalid paths, wrong value types, malformed JSON, invalid rule structures, and unreadable configuration with English diagnostics and non-zero status before mutation.
 - **REQ-249**: MUST implement `--print-raw [Global|Local]` by emitting existing selected files byte-for-byte, global then local, with file identification and missing-file diagnostics exclusively on stderr.
 - **REQ-250**: MUST implement `--print [PATH]` rendering the effective configuration as a box-drawing tree with an `Application_Configuration` root header omitted from CLI paths, printing the whole tree without PATH and only the PATH subtree otherwise.
-- **REQ-251**: MUST implement `--params [PATH]` rendering the schema-derived parameter hierarchy, printing the whole tree without PATH and only the PATH subtree otherwise.
+- **REQ-251**: MUST implement `--info [PATH]` rendering the schema-derived parameter hierarchy, printing the whole tree without PATH and only the PATH subtree otherwise.
 - **REQ-252**: MUST document colon paths, zero-based indices, `append`, `insert`, row, cell, and map-key tokens, unset/default semantics, and shell-quoted JSON input with application-specific examples in configuration command help.
 - **REQ-253**: MUST preserve the unselected configuration file and existing alias algorithms during configuration management, including the independent repository-synchronization alias `get`.
 - **REQ-254**: MUST atomically replace the selected configuration file after successful validation by writing a flushed same-directory temporary file and renaming it over the target.
@@ -368,8 +369,8 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-260**: MUST render `--print` primitive arrays as `Idx`/`Value` tables headed by `(<N> items | row target: <path>:<Idx> | add: :+)`.
 - **REQ-261**: MUST render `--print` object arrays as `Idx`-plus-field tables headed by `(<N> rows | cell target: <path>:<Idx>:<Field> | add: :+)`.
 - **REQ-262**: MUST render empty `--print` arrays as `(empty list — add row with: --set <path>:+ <value>)` and empty maps as `(empty map — set key with: --set <path>:<Key> <value>)`.
-- **REQ-263**: MUST render each `--params` parameter as a `[<type and constraints>] <description>` header line followed by a `Default : <default>` line naming its `--unset` restore command and full-path `--set` example commands.
-- **REQ-264**: MUST render `--params` selections as `Value`/`Default`/`Meaning` tables and object arrays with an `Item Schema` table followed by append, insert, update, reset, replace, delete, overwrite, and clear command examples.
+- **REQ-263**: MUST render each `--info` parameter as a `[<type and constraints>] <description>` header line followed by a `Default : <default>` line naming its `--unset` restore command and full-path `--set` example commands.
+- **REQ-264**: MUST render `--info` selections as `Value`/`Default`/`Meaning` tables and object arrays with an `Item Schema` table followed by append, insert, update, reset, replace, delete, overwrite, and clear command examples.
 - **REQ-265**: MUST implement `--set <array path>:append VALUE` (alias `:+`) by validating the item against the array schema, appending it, and printing a confirmation naming the assigned index.
 - **REQ-266**: MUST implement `--set <array path>:insert:<Idx> VALUE` inserting at `<Idx>` with subsequent items shifted down, behaving as append when `<Idx>` equals the array length.
 - **REQ-267**: MUST implement `--set <path>:<Idx>`, `--set <path>:<Idx>:<Field>`, and `--set <path>:<Key>` replacing a whole row, updating one object cell, and adding or updating a map key.
@@ -378,12 +379,12 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-270**: MUST reject out-of-range `--set` and `--unset` indices with exit status 1 and a stderr error stating the valid index range and the `:append` alternative.
 - **REQ-271**: MUST print an English confirmation line to stdout for every successful `--set` or `--unset` mutation and exit with status 0.
 - **REQ-272**: MUST create the missing global configuration directory tree and `config.json` initialized with schema defaults before executing any configuration command.
-- **REQ-273**: MUST print valid `--get`, `--print`, `--print-raw`, and `--params` output to stdout with exit status 0 and error diagnostics to stderr with exit status 1.
+- **REQ-273**: MUST print valid `--get`, `--print`, `--print-raw`, and `--info` output to stdout with exit status 0 and error diagnostics to stderr with exit status 1.
 - **REQ-274**: MUST store and display every configuration value, including credentials and API keys, in plain text without masking across `--print`, `--print-raw`, and `--get`.
-- **REQ-275**: MUST indent `--print` and `--params` tree output by exactly four characters per node depth level, independent of node name, value, and metadata text lengths.
-- **REQ-276**: MUST NOT pad `--print` or `--params` node names, values, or metadata prefixes to any computed column width.
+- **REQ-275**: MUST indent `--print` and `--info` tree output by exactly four characters per node depth level, independent of node name, value, and metadata text lengths.
+- **REQ-276**: MUST NOT pad `--print` or `--info` node names, values, or metadata prefixes to any computed column width.
 - **REQ-277**: MUST render each parameter metadata entry (`Default`, `Set cmd`, `Allowed Values`, `Item Schema`, command sets, `Full overwrite`, `Reset block`) as a child of that parameter one depth level deeper using `├──` or `└──` connectors.
-- **REQ-278**: MUST render `--print` and `--params` tables one depth level below their owning parameter or labelled metadata entry.
+- **REQ-278**: MUST render `--print` and `--info` tables one depth level below their owning parameter or labelled metadata entry.
 - **REQ-279**: MUST nest child parameters under their parent section node at exactly one additional depth level with `├──` or `└──` connectors.
 
 ### 3.3 Project File Structure
@@ -498,7 +499,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-097** evidence: `src/git_alias/configuration.py` `execute` (L998) performing exactly one `write_scope` per `--set`/`--unset` invocation plus the sole `_bootstrap_global` default initialization (L461-474).
 - **REQ-245** evidence: `src/git_alias/configuration.py` `parse_value` (L249-266) casting CLI strings to strict schema types and `validate` (L204-247) rejecting mismatches before persistence.
 - **REQ-250** evidence: `src/git_alias/configuration.py` `render_values_tree` (L719-750) rendering the `Application_Configuration` root header with optional subtree selection and `execute` `--print` routing (L1022-1030).
-- **REQ-251** evidence: `src/git_alias/configuration.py` `render_params_tree` (L871-891) with optional subtree path filtering from `execute` (L1022-1030).
+- **REQ-251** evidence: `src/git_alias/configuration.py` `execute` routing the `--info` command to `render_params_tree` with optional subtree path filtering, rendering the whole schema tree when PATH is absent.
 - **REQ-252** evidence: `src/git_alias/configuration.py` `INPUT_HELP` (L131-164) documenting colon paths, zero-based indices, `append`/`insert`/row/cell/map-key tokens, unset/default semantics, and shell-quoted JSON input.
 - **REQ-254** evidence: `src/git_alias/configuration.py` `write_scope` (L289-315) writing a flushed and fsynced same-directory temporary file renamed over the target.
 - **REQ-257** evidence: `src/git_alias/configuration.py` `_values_node` (L667-717) printing `[Path: ...]` badges and verbatim node names; `_values_map` and `_values_array` carrying the parameter path into target hints.
