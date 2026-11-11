@@ -9,16 +9,19 @@ from pathlib import Path
 
 ## @brief Test suite for release-pypi.yml workflow and PyPI packaging contracts.
 # @details Level 1 static-contract tests over committed release assets: verifies
-#          the workflow rename (REQ-112), preserved build/attestation/release
-#          steps (REQ-113, REQ-114), OIDC permissions (REQ-193), PyPI Trusted
-#          Publishing post-steps without credentials (REQ-194, REQ-195),
-#          PyPI project metadata (REQ-196), PEP 639 license declaration
-#          (REQ-197), README install documentation (REQ-198), Node24
-#          runner-generation pins without Node20 opt-out overrides
-#          (REQ-211, REQ-212, REQ-213), and the test-release job gating
-#          release build and publication on successful lock synchronization
-#          and full pytest execution (REQ-228, REQ-229).
-# @satisfies REQ-112, REQ-113, REQ-114, REQ-193, REQ-194, REQ-195, REQ-196, REQ-197, REQ-198, REQ-211, REQ-212, REQ-213, REQ-228, REQ-229
+#          the workflow rename (REQ-112), provenance attestation of the tagged
+#          commit pre-built artifacts without any distribution build
+#          (REQ-113, REQ-313), preserved GitHub Release upload of the tagged
+#          commit assets (REQ-114), OIDC permissions (REQ-193), PyPI Trusted
+#          Publishing post-steps without credentials over the unchanged
+#          pre-built distributions (REQ-194, REQ-195, REQ-315), PyPI project
+#          metadata (REQ-196), PEP 639 license declaration (REQ-197), README
+#          install documentation (REQ-198), Node24 runner-generation pins
+#          without Node20 opt-out overrides (REQ-211, REQ-212, REQ-213), the
+#          tagged-artifact validation gate (REQ-314), and the test-release job
+#          gating publication on successful lock synchronization and full
+#          pytest execution (REQ-228, REQ-229).
+# @satisfies REQ-112, REQ-113, REQ-114, REQ-193, REQ-194, REQ-195, REQ-196, REQ-197, REQ-198, REQ-211, REQ-212, REQ-213, REQ-228, REQ-229, REQ-313, REQ-314, REQ-315
 class ReleaseWorkflowPyPiTest(unittest.TestCase):
     ## @brief Repository root path used by release-contract tests.
     REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -78,15 +81,63 @@ class ReleaseWorkflowPyPiTest(unittest.TestCase):
         self.assertIn("id-token: write", permissions_block)
         self.assertIn("attestations: write", permissions_block)
 
-    ## @brief Verify build and provenance attestation steps are preserved.
+    ## @brief Verify provenance attestation covers the pre-built tagged artifacts.
+    # @details REQ-113 and REQ-313: the workflow attests the pre-built `dist/*`
+    #          artifacts of the tagged commit with Python 3.11 and never runs a
+    #          distribution build inside GitHub Actions.
     # @return None.
-    # @satisfies REQ-113
-    def test_workflow_build_and_attestation_steps_preserved(self):
+    # @satisfies REQ-113, REQ-313
+    def test_workflow_attests_prebuilt_artifacts_without_build(self):
+        # Arrange
         text = self._workflow_text()
-        self.assertIn('python-version: "3.11"', text)
-        self.assertIn("python -m build", text)
+        # Act
         attestation_block = self._workflow_step_block("actions/attest-build-provenance")
+        # Assert
+        self.assertIn('python-version: "3.11"', text)
         self.assertIn("subject-path: dist/*", attestation_block)
+        for build_command in ("python -m build", "uv build", "scripts/build.sh"):
+            self.assertNotIn(build_command, text)
+
+    ## @brief Verify the tagged-commit pre-built artifacts are validated before use.
+    # @details REQ-313 and REQ-314: the publish job requires exactly one
+    #          sdist and one wheel named after the `pyproject.toml` name and
+    #          version, requires both to be git-tracked in the tagged commit,
+    #          and aborts before attestation and publication otherwise.
+    # @return None.
+    # @satisfies REQ-313, REQ-314
+    def test_workflow_verifies_prebuilt_tagged_artifacts(self):
+        # Arrange
+        text = self._workflow_text()
+        # Act
+        verify_block = self._workflow_step_block("Verify pre-built release artifacts")
+        # Assert
+        self.assertIn("dist/galias-${VERSION}.tar.gz", verify_block)
+        self.assertIn("dist/galias-${VERSION}-\"*.whl", verify_block)
+        self.assertIn("git ls-files --error-unmatch", verify_block)
+        self.assertIn("exit 1", verify_block)
+        self.assertLess(
+            text.index("Verify pre-built release artifacts"),
+            text.index("actions/attest-build-provenance"),
+        )
+        self.assertLess(
+            text.index("Verify pre-built release artifacts"),
+            text.index("pypa/gh-action-pypi-publish"),
+        )
+
+    ## @brief Verify PyPI receives the unchanged pre-built distributions.
+    # @details REQ-315: publication consumes the verified `dist/` directory of
+    #          the tagged commit without any intermediate rebuild step.
+    # @return None.
+    # @satisfies REQ-315
+    def test_workflow_publishes_prebuilt_distributions_to_pypi(self):
+        # Arrange
+        text = self._workflow_text()
+        # Act
+        job_block = text[text.index("  publish-release:") :]
+        # Assert
+        self.assertIn("pypa/gh-action-pypi-publish", job_block)
+        for build_command in ("python -m build", "uv build", "scripts/build.sh"):
+            self.assertNotIn(build_command, job_block)
 
     ## @brief Verify GitHub Release step semantics are preserved.
     # @return None.
@@ -241,38 +292,38 @@ class ReleaseWorkflowPyPiTest(unittest.TestCase):
     ## @brief Verify the test-release job runs lock check and full pytest suite.
     # @details REQ-228: the test-release job executes after checkout with
     #          Node24-based setup actions and runs `uv lock --check` followed
-    #          by `uv run pytest` before any build job is declared.
+    #          by `uv run pytest` before any publication job is declared.
     # @return None.
     # @satisfies REQ-228, REQ-213
     def test_workflow_runs_test_release_job_with_lock_check_and_pytest(self):
         # Arrange
         text = self._workflow_text()
         test_job_index = text.index("  test-release:")
-        build_job_index = text.index("  build-release:")
+        publish_job_index = text.index("  publish-release:")
         # Act
-        job_block = text[test_job_index:build_job_index]
+        job_block = text[test_job_index:publish_job_index]
         # Assert
-        self.assertLess(test_job_index, build_job_index)
+        self.assertLess(test_job_index, publish_job_index)
         self.assertIn("uses: actions/checkout@v5", job_block)
         self.assertIn("uses: astral-sh/setup-uv@v6", job_block)
         self.assertIn("run: uv lock --check", job_block)
         self.assertIn("run: uv run pytest", job_block)
 
-    ## @brief Verify build-release is gated on test-release success via needs.
-    # @details REQ-229: a failing test-release job skips build-release and
+    ## @brief Verify publish-release is gated on test-release success via needs.
+    # @details REQ-229: a failing test-release job skips publish-release and
     #          therefore every downstream release step (attestation, GitHub
     #          Release upload, PyPI publication).
     # @return None.
     # @satisfies REQ-229
-    def test_workflow_gates_build_release_on_test_release_success(self):
+    def test_workflow_gates_publish_release_on_test_release_success(self):
         # Arrange
         text = self._workflow_text()
         # Act
-        test_job_index = text.index("  test-release:")
-        needs_index = text.index("needs: [check-branch, test-release]")
+        publish_job_index = text.index("  publish-release:")
+        publish_job_block = text[publish_job_index:]
         # Assert
-        self.assertIn("needs: [check-branch, test-release]", text)
-        self.assertLess(test_job_index, needs_index)
+        self.assertIn("needs: [check-branch, test-release]", publish_job_block)
+        self.assertLess(text.index("  test-release:"), publish_job_index)
 
 
 if __name__ == "__main__":

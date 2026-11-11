@@ -50,7 +50,7 @@ jobs:
             echo "is_release=false" >> "$GITHUB_OUTPUT"
           fi
 
-  # 2. Run the full test suite; failing tests must block any release artifact or publication
+  # 2. Run the full test suite; failing tests must block attestation and any publication
   test-release:
     runs-on: ubuntu-latest
 
@@ -72,8 +72,8 @@ jobs:
       - name: Run the full test suite
         run: uv run pytest
 
-  # 3. Build the release distributions
-  build-release:
+  # 3. Publish the pre-built release artifacts of the tagged commit (no build)
+  publish-release:
     needs: [check-branch, test-release]
     # Run this job ONLY when the previous job output is 'true'
     if: needs.check-branch.outputs.is_release == 'true'
@@ -90,11 +90,48 @@ jobs:
         with:
           python-version: "3.11"
 
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v6
-
-      - name: Build distributions
-        run: uv run --frozen --with build python -m build
+      - name: Verify pre-built release artifacts
+        run: |
+          set -euo pipefail
+          VERSION="$(python -c 'import pathlib, tomllib; print(tomllib.loads(pathlib.Path("pyproject.toml").read_text(encoding="utf-8"))["project"]["version"])')"
+          echo "Tagged release version: $VERSION"
+          if [ ! -d dist ]; then
+            echo "❌ Missing 'dist/' directory in the tagged release commit."
+            exit 1
+          fi
+          mapfile -t SDISTS < <(find dist -maxdepth 1 -type f -name 'galias-*.tar.gz' | sort)
+          mapfile -t WHEELS < <(find dist -maxdepth 1 -type f -name 'galias-*.whl' | sort)
+          if [ "${#SDISTS[@]}" -ne 1 ] || [ "${#WHEELS[@]}" -ne 1 ]; then
+            echo "❌ Expected exactly one pre-built sdist and one pre-built wheel in dist/, found ${#SDISTS[@]} sdist and ${#WHEELS[@]} wheel."
+            exit 1
+          fi
+          SDIST="${SDISTS[0]}"
+          WHEEL="${WHEELS[0]}"
+          if [ "$SDIST" != "dist/galias-${VERSION}.tar.gz" ]; then
+            echo "❌ Sdist '$SDIST' does not match the pyproject.toml name and version."
+            exit 1
+          fi
+          case "$WHEEL" in
+            "dist/galias-${VERSION}-"*.whl) ;;
+            *)
+              echo "❌ Wheel '$WHEEL' does not match the pyproject.toml name and version."
+              exit 1
+              ;;
+          esac
+          UNEXPECTED="$(find dist -maxdepth 1 -type f ! -name 'galias-*.tar.gz' ! -name 'galias-*.whl' -print)"
+          if [ -n "$UNEXPECTED" ]; then
+            echo "❌ Unexpected files in dist/: $UNEXPECTED"
+            exit 1
+          fi
+          for artifact in "$SDIST" "$WHEEL"; do
+            if ! git ls-files --error-unmatch -- "$artifact" >/dev/null 2>&1; then
+              echo "❌ '$artifact' is not tracked in the tagged release commit."
+              exit 1
+            fi
+          done
+          tar -tzf "$SDIST" >/dev/null
+          python -m zipfile -t "$WHEEL" >/dev/null
+          echo "✅ Using pre-built release artifacts of the tagged release commit: $SDIST $WHEEL"
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v3
