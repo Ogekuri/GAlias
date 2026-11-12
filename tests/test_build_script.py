@@ -10,16 +10,17 @@ HDT artifacts (Generator mode):
   - `scripts/build.sh` default build flow (Level 2, subprocess in a sandbox
     repository with a fake `uv` executable)
 - Call graph: `build.sh` -> `check_build_prerequisites`,
-  `remove_release_artifacts`, `remove_build_intermediates`,
+  `run_cleanup`, `remove_release_artifacts`, `remove_build_intermediates`,
   `uv build --out-dir <staging>`, `verify_staged_artifacts`,
   `install_staged_artifacts`, `print_build_summary`, `on_exit`.
 - External dependencies to isolate: `uv` replaced by a deterministic fake;
   repository replaced by a temporary git sandbox; `HOME`, `TMPDIR`, and git
   configuration redirected to temporary paths.
 - Test matrix: script contract (REQ-280); happy-path build from a foreign
-  working directory (REQ-280, REQ-283, REQ-284, REQ-285); stale-output
-  removal preserving tracked and non-generated files (REQ-282, REQ-288);
-  repeated builds (REQ-282); failed `uv build` (REQ-284, REQ-285); missing
+  working directory (REQ-280, REQ-283, REQ-284, REQ-285, REQ-317);
+  pre-build removal of every release-artifact version including tracked
+  artifacts and non-generated preservation (REQ-282, REQ-316); repeated
+  builds (REQ-282); failed `uv build` (REQ-284, REQ-285); missing
   wheel (REQ-283, REQ-284); missing `uv` (REQ-281); `--clean` (REQ-286);
   `--list-artifacts` and unknown options (REQ-287).
 - Execution plan: CI runs the suite through `uv run pytest`; developers
@@ -38,10 +39,11 @@ from release_scripts_support import REPO_ROOT, create_sandbox
 
 
 ## @brief Test suite for the release-artifact build Bash script.
-# @details Validates the script contract, the staged build flow, targeted
-#          stale-output handling, failure cleanup, and the auxiliary option
-#          modes inside hermetic sandbox repositories.
-# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285, REQ-286, REQ-287, REQ-288
+# @details Validates the script contract, the staged build flow, automatic
+#          pre-build cleanup of every artifact version, post-build residue
+#          removal, failure cleanup, and the auxiliary option modes inside
+#          hermetic sandbox repositories.
+# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285, REQ-286, REQ-287, REQ-288, REQ-316, REQ-317
 class BuildScriptTest(unittest.TestCase):
     ## @brief Absolute path of the real build script under test.
     SCRIPT_PATH = REPO_ROOT / "scripts" / "build.sh"
@@ -78,11 +80,12 @@ class BuildScriptTest(unittest.TestCase):
         # Assert
         self.assertEqual(completed.returncode, expected_returncode, msg=completed.stderr)
 
-    ## @brief Verify `--list-artifacts` prints generated artifacts only.
-    # @details Tracked and non-generated `dist/` files are excluded.
+    ## @brief Verify `--list-artifacts` prints every existing artifact.
+    # @details Tracked and untracked release artifacts of every version are
+    #          listed; non-generated `dist/` files are excluded.
     # @return None.
     # @satisfies REQ-287
-    def test_list_artifacts_prints_only_untracked_generated_files(self):
+    def test_list_artifacts_prints_every_existing_release_artifact(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             # Arrange
             sandbox = create_sandbox(Path(tmp_dir))
@@ -92,7 +95,10 @@ class BuildScriptTest(unittest.TestCase):
             (dist / "galias-9.9.9-py3-none-any.whl").write_text("tracked", encoding="utf-8")
             (dist / "NOTES.md").write_text("notes", encoding="utf-8")
             sandbox.git("add", "--force", "dist/galias-9.9.9-py3-none-any.whl")
-            expected_output = [str(dist / "galias-0.0.1.tar.gz")]
+            expected_output = [
+                str(dist / "galias-0.0.1.tar.gz"),
+                str(dist / "galias-9.9.9-py3-none-any.whl"),
+            ]
             # Act
             completed = sandbox.run("build.sh", "--list-artifacts")
             # Assert
@@ -190,12 +196,12 @@ class BuildScriptTest(unittest.TestCase):
             for artifact in self.EXPECTED_ARTIFACTS:
                 self.assertIn(f"{dist / artifact} (", completed.stdout)
 
-    ## @brief Verify stale artifacts are replaced and other files preserved.
-    # @details A stale generated artifact is removed; a git-tracked artifact
-    #          lookalike and a non-generated file remain untouched.
+    ## @brief Verify stale artifacts of every version are replaced.
+    # @details Untracked and git-tracked release artifacts of any version are
+    #          removed before building; a non-generated file remains untouched.
     # @return None.
-    # @satisfies REQ-282, REQ-288
-    def test_build_removes_stale_artifacts_and_preserves_tracked_files(self):
+    # @satisfies REQ-282, REQ-317
+    def test_build_removes_stale_artifacts_of_any_version(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             # Arrange
             sandbox = create_sandbox(Path(tmp_dir))
@@ -205,13 +211,13 @@ class BuildScriptTest(unittest.TestCase):
             (dist / "galias-9.9.9-py3-none-any.whl").write_text("tracked", encoding="utf-8")
             (dist / "NOTES.md").write_text("notes", encoding="utf-8")
             sandbox.git("add", "--force", "dist/galias-9.9.9-py3-none-any.whl")
-            expected_entries = sorted(self.EXPECTED_ARTIFACTS + ["NOTES.md", "galias-9.9.9-py3-none-any.whl"])
+            expected_entries = sorted(self.EXPECTED_ARTIFACTS + ["NOTES.md"])
             # Act
             completed = sandbox.run("build.sh")
             # Assert
             self.assertEqual(completed.returncode, 0, msg=completed.stderr)
             self.assertEqual(sorted(entry.name for entry in dist.iterdir()), expected_entries)
-            self.assertEqual((dist / "galias-9.9.9-py3-none-any.whl").read_text(encoding="utf-8"), "tracked")
+            self.assertFalse((dist / "galias-9.9.9-py3-none-any.whl").exists())
             self.assertEqual((dist / "NOTES.md").read_text(encoding="utf-8"), "notes")
 
     ## @brief Verify consecutive builds never accumulate artifacts.

@@ -2,20 +2,25 @@
 ## @file build.sh
 # @brief Release-artifact build script producing the sdist and wheel in `dist/`.
 # @details Default mode executes, in strict fail-fast order: prerequisite
-#          checks (REQ-281), targeted removal of stale generated outputs
-#          (REQ-282), `uv build` into a temporary staging directory, staged
-#          artifact verification, and installation of exactly one sdist and
-#          one wheel into `dist/` (REQ-283), followed by a summary (REQ-285).
-#          The `on_exit` trap removes the staging directory and build
-#          intermediates and, when the build failed, every generated `dist/`
-#          artifact so a failed build never exposes partial output (REQ-284).
-#          `--clean` removes generated outputs without building (REQ-286);
-#          `--list-artifacts` prints generated `dist/` artifacts (REQ-287).
-#          Git-tracked files and non-generated `dist/` files are never deleted
-#          (REQ-282, REQ-288). The repository root derives from the script
-#          location, so invocation works from any working directory (REQ-280).
+#          checks (REQ-281), automatic cleanup of every previous generated
+#          output (REQ-317) removing all `dist/` release artifacts of any
+#          version regardless of git tracking status plus an emptied `dist/`
+#          directory (REQ-282) and the `build/`/`src/*.egg-info` intermediates
+#          through the tracked-content guard (REQ-288, REQ-316), then `uv
+#          build` into a temporary staging directory, staged artifact
+#          verification, and installation of exactly one sdist and one wheel
+#          into `dist/` (REQ-283), followed by a summary (REQ-285).
+#          The `on_exit` trap removes the staging directory and every build
+#          intermediate so a successful build leaves only the produced `dist/`
+#          artifacts, and additionally removes every generated `dist/`
+#          artifact when the build failed (REQ-284).
+#          `--clean` executes the same cleanup without building (REQ-286);
+#          `--list-artifacts` prints existing `dist/` release artifacts
+#          (REQ-287). Non-generated `dist/` files are never deleted.
+#          The repository root derives from the script location, so invocation
+#          works from any working directory (REQ-280).
 #          Complexity: O(N) over `dist/` entries plus the delegated build.
-# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285, REQ-286, REQ-287, REQ-288, REQ-307
+# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285, REQ-286, REQ-287, REQ-288, REQ-307, REQ-316, REQ-317
 
 set -Eeuo pipefail
 
@@ -98,11 +103,12 @@ USAGE
 # @details O(tracked entries under path); queries `git ls-files` with
 #          literal pathspecs relative to `REPO_ROOT`. Outside a git work tree
 #          nothing is tracked. A failing git query inside a work tree is
-#          treated as tracked so deletion fails closed (REQ-288).
+#          treated as tracked so intermediate deletion fails closed
+#          (REQ-288, REQ-316).
 # @param path {str} Absolute path below `REPO_ROOT`.
 # @return {int} 0 when tracked content exists or the query failed inside a
 #         work tree; 1 otherwise.
-# @satisfies REQ-282, REQ-288
+# @satisfies REQ-288, REQ-316
 has_tracked_content() {
   local relative="${1#"$REPO_ROOT"/}"
   local tracked
@@ -115,13 +121,13 @@ has_tracked_content() {
   [ -n "$tracked" ]
 }
 
-## @brief Remove one generated path unless it holds git-tracked content.
+## @brief Remove one generated intermediate path unless it holds git-tracked content.
 # @details O(size of path); absent paths succeed. Tracked content makes the
 #          function refuse deletion and report an error (REQ-288).
 # @param path {str} Absolute file or directory path below `REPO_ROOT`.
 # @return {int} 0 when the path is absent after the call; 1 on refusal or
 #         removal failure.
-# @satisfies REQ-288
+# @satisfies REQ-288, REQ-316
 remove_generated_path() {
   local target="$1"
   if [ ! -e "$target" ] && [ ! -L "$target" ]; then
@@ -138,11 +144,11 @@ remove_generated_path() {
   return 0
 }
 
-## @brief Collect untracked generated release artifacts present in `dist/`.
+## @brief Collect every release artifact present in `dist/`.
 # @details O(N) over matching `dist/` entries; selects regular files named
-#          `<DIST_NAME>-*.tar.gz` or `<DIST_NAME>-*.whl` and skips git-tracked
-#          files so version-controlled `dist/` content is never treated as
-#          generated output (REQ-282).
+#          `<DIST_NAME>-*.tar.gz` or `<DIST_NAME>-*.whl` for every version
+#          number, including git-tracked artifacts, so no previous build
+#          survives a new build (REQ-282).
 # @return None; side-effect: overwrites global array `RELEASE_ARTIFACTS`.
 # @satisfies REQ-282, REQ-287
 collect_release_artifacts() {
@@ -152,25 +158,38 @@ collect_release_artifacts() {
     if [ ! -f "$candidate" ]; then
       continue
     fi
-    if has_tracked_content "$candidate"; then
-      continue
-    fi
     RELEASE_ARTIFACTS+=("$candidate")
   done
 }
 
-## @brief Remove every untracked generated release artifact from `dist/`.
+## @brief Delete one release artifact of any version.
+# @details O(1); release artifacts are regenerated outputs, so deletion does
+#          not consult the git-tracked-content guard and every version number
+#          is removed (REQ-282).
+# @param artifact {str} Absolute artifact path below `DIST_DIR`.
+# @return {int} 0 when the artifact is absent after the call; 1 on removal failure.
+# @satisfies REQ-282
+remove_release_artifact() {
+  local artifact="$1"
+  if ! rm -f -- "$artifact"; then
+    log_error "Unable to remove '$artifact'"
+    return 1
+  fi
+  return 0
+}
+
+## @brief Remove every release artifact from `dist/`, whatever its version.
 # @details O(N); deletes only paths returned by `collect_release_artifacts`,
-#          preserving tracked and non-generated `dist/` files (REQ-282).
+#          preserving non-generated `dist/` files (REQ-282).
 # @return {int} 0 when every artifact was removed; 1 on any removal failure.
-# @satisfies REQ-282, REQ-284, REQ-286
+# @satisfies REQ-282, REQ-284, REQ-286, REQ-317
 remove_release_artifacts() {
   local artifact
   local failed=0
   collect_release_artifacts
   if [ "${#RELEASE_ARTIFACTS[@]}" -gt 0 ]; then
     for artifact in "${RELEASE_ARTIFACTS[@]}"; do
-      remove_generated_path "$artifact" || failed=1
+      remove_release_artifact "$artifact" || failed=1
     done
   fi
   return "$failed"
@@ -178,9 +197,9 @@ remove_release_artifacts() {
 
 ## @brief Remove setuptools build intermediates from the repository tree.
 # @details O(size of intermediates); targets `build/` and `src/*.egg-info`
-#          only, through the tracked-content guard (REQ-288).
+#          only, through the tracked-content guard (REQ-288, REQ-316).
 # @return {int} 0 when every intermediate was removed; 1 on any failure.
-# @satisfies REQ-282, REQ-284, REQ-286
+# @satisfies REQ-284, REQ-286, REQ-316, REQ-317
 remove_build_intermediates() {
   local intermediate
   local failed=0
@@ -212,18 +231,39 @@ remove_empty_dist_dir() {
   return 0
 }
 
+## @brief Remove every generated build output, whatever its version.
+# @details O(size of outputs); removes all `dist/` release artifacts
+#          (REQ-282), the `build/` and `src/*.egg-info` intermediates
+#          (REQ-316), and an emptied `dist/` directory. Execution is identical
+#          for the automatic pre-build cleanup and the `--clean` mode
+#          (REQ-286, REQ-317).
+# @return {int} 0 on complete cleanup; 1 on any removal failure.
+# @satisfies REQ-282, REQ-286, REQ-288, REQ-316, REQ-317
+run_cleanup() {
+  local failed=0
+  remove_release_artifacts || failed=1
+  remove_build_intermediates || failed=1
+  remove_empty_dist_dir || failed=1
+  return "$failed"
+}
+
 ## @brief Implement `--clean`: remove generated outputs without building.
-# @details O(1); delegates to `scripts/clean.sh`, the canonical cleanup entry
-#          point for every artifact created by this script (REQ-286, REQ-309).
+# @details O(size of outputs); executes the inline cleanup flow with the
+#          canonical build progress lines and no separate cleanup script
+#          (REQ-286).
 # @return {int} 0 on complete cleanup; 1 on any removal failure.
 # @satisfies REQ-286
 clean_generated_outputs() {
-  "$SCRIPT_DIR/clean.sh"
+  log_step "Remove generated release artifacts and build intermediates"
+  if ! run_cleanup; then
+    fail "Cleanup incomplete"
+  fi
+  log_step "Cleanup completed"
 }
 
-## @brief Implement `--list-artifacts`: print generated `dist/` artifacts.
+## @brief Implement `--list-artifacts`: print existing `dist/` artifacts.
 # @details O(N); prints one absolute path per line and nothing when no
-#          untracked generated artifact exists (REQ-287).
+#          release artifact exists (REQ-287).
 # @return None; side-effect: artifact paths on stdout.
 # @satisfies REQ-287
 list_release_artifacts() {
@@ -339,8 +379,8 @@ verify_staged_artifacts() {
 
 ## @brief Move verified staged artifacts into `dist/`.
 # @details O(1) moves; creates `dist/` when absent and refuses to overwrite
-#          an existing destination, which after stale removal can only be a
-#          git-tracked file (REQ-282, REQ-283).
+#          an existing destination, which after the pre-build cleanup can only
+#          be a concurrently created file (REQ-282, REQ-283).
 # @return None; never returns when installation fails.
 # @satisfies REQ-280, REQ-283
 install_staged_artifacts() {
@@ -352,7 +392,7 @@ install_staged_artifacts() {
   for staged in "$STAGED_SDIST" "$STAGED_WHEEL"; do
     destination="$DIST_DIR/${staged##*/}"
     if [ -e "$destination" ] || [ -L "$destination" ]; then
-      fail "Refusing to overwrite existing version-controlled file '$destination'"
+      fail "Refusing to overwrite existing file '$destination'"
     fi
     mv -- "$staged" "$destination" || fail "Unable to move '${staged##*/}' into '$DIST_DIR'"
   done
@@ -385,13 +425,14 @@ print_build_summary() {
 
 ## @brief Build-mode exit trap removing temporary and partial outputs.
 # @details Runs on every build-mode exit path. Removes the staging directory
-#          and, once the build started, the build intermediates; a failed
-#          build or a failed cleanup additionally removes generated `dist/`
-#          artifacts and a `dist/` directory created by this run (REQ-284).
-#          The original non-zero status is preserved; a cleanup failure
-#          after a successful build yields status 1 (REQ-285).
+#          and, once the build started, every build intermediate so a
+#          successful build leaves only the produced `dist/` artifacts; a
+#          failed build or a failed cleanup additionally removes generated
+#          `dist/` artifacts and a `dist/` directory created by this run
+#          (REQ-284). The original non-zero status is preserved; a cleanup
+#          failure after a successful build yields status 1 (REQ-285).
 # @return Never returns; exits with the resolved status.
-# @satisfies REQ-284, REQ-285
+# @satisfies REQ-284, REQ-285, REQ-316
 on_exit() {
   local status=$?
   local cleanup_failed=0
@@ -425,11 +466,14 @@ on_exit() {
 
 ## @brief Execute the complete release-artifact build.
 # @details Registers the exit and signal traps, validates prerequisites,
-#          removes stale generated outputs, runs `uv build` into the staging
-#          directory, verifies and installs the artifacts, and prints the
-#          summary. Every step aborts the script on failure (REQ-285).
+#          runs the REQ-282/REQ-316/REQ-288 cleanup of every previous build,
+#          runs `uv build` into the staging directory, verifies and installs
+#          the artifacts, and prints the summary. Every step aborts the
+#          script on failure (REQ-285); the exit trap removes every
+#          intermediate so only the produced artifacts remain (REQ-284,
+#          REQ-317).
 # @return None; exits non-zero on the first failing step.
-# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285
+# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285, REQ-316, REQ-317
 run_build() {
   trap on_exit EXIT
   trap 'exit 130' INT
@@ -439,10 +483,9 @@ run_build() {
   log_step "Check build prerequisites"
   check_build_prerequisites
 
-  log_step "Remove stale build outputs"
+  log_step "Clean previous build outputs"
   BUILD_STARTED=1
-  remove_release_artifacts || fail "Unable to remove stale release artifacts"
-  remove_build_intermediates || fail "Unable to remove stale build intermediates"
+  run_cleanup || fail "Unable to clean previous build outputs"
 
   log_step "Build sdist and wheel"
   STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/galias-build.XXXXXX")" \
