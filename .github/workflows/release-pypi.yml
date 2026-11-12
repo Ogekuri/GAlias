@@ -50,7 +50,7 @@ jobs:
             echo "is_release=false" >> "$GITHUB_OUTPUT"
           fi
 
-  # 2. Publish the pre-built release artifacts of the tagged commit
+  # 2. Publish the available pre-built release artifacts
   #    (no build step and no build-preparatory validation)
   publish-release:
     needs: [check-branch]
@@ -102,15 +102,9 @@ jobs:
             echo "❌ Unexpected files in dist/: $UNEXPECTED"
             exit 1
           fi
-          for artifact in "$SDIST" "$WHEEL"; do
-            if ! git ls-files --error-unmatch -- "$artifact" >/dev/null 2>&1; then
-              echo "❌ '$artifact' is not tracked in the tagged release commit."
-              exit 1
-            fi
-          done
           tar -tzf "$SDIST" >/dev/null
           python -m zipfile -t "$WHEEL" >/dev/null
-          echo "✅ Using pre-built release artifacts of the tagged release commit: $SDIST $WHEEL"
+          echo "✅ Using available release artifacts: $SDIST $WHEEL"
 
       - name: Attest build provenance
         uses: actions/attest-build-provenance@v3

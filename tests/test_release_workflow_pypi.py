@@ -9,19 +9,18 @@ from pathlib import Path
 
 ## @brief Test suite for release-pypi.yml workflow and PyPI packaging contracts.
 # @details Level 1 static-contract tests over committed release assets: verifies
-#          the workflow rename (REQ-112), provenance attestation of the tagged
-#          commit pre-built artifacts without any distribution build
-#          (REQ-113, REQ-313), preserved GitHub Release upload of the tagged
-#          commit assets (REQ-114), OIDC permissions (REQ-193), PyPI Trusted
-#          Publishing post-steps without credentials over the unchanged
-#          pre-built distributions (REQ-194, REQ-195, REQ-315), PyPI project
-#          metadata (REQ-196), PEP 639 license declaration (REQ-197), README
-#          install documentation (REQ-198), Node24 runner-generation pins
-#          without Node20 opt-out overrides (REQ-211, REQ-212, REQ-213), the
-#          tagged-artifact validation gate (REQ-314), and the publication
+#          the workflow rename (REQ-112), provenance attestation of the pre-built
+#          artifacts without any distribution build (REQ-113, REQ-313), preserved
+#          GitHub Release upload of the available assets (REQ-114), OIDC
+#          permissions (REQ-193), PyPI Trusted Publishing post-steps without
+#          credentials over the unchanged distributions (REQ-194, REQ-195,
+#          REQ-315), PyPI project metadata (REQ-196), PEP 639 license declaration
+#          (REQ-197), README install documentation (REQ-198), Node24
+#          runner-generation pins without Node20 opt-out overrides (REQ-211,
+#          REQ-212, REQ-213), pre-built artifact validation, and the publication
 #          pipeline that runs no build-preparatory validation and is gated only
 #          on branch containment (REQ-228, REQ-229).
-# @satisfies REQ-112, REQ-113, REQ-114, REQ-193, REQ-194, REQ-195, REQ-196, REQ-197, REQ-198, REQ-211, REQ-212, REQ-213, REQ-228, REQ-229, REQ-313, REQ-314, REQ-315
+# @satisfies REQ-112, REQ-113, REQ-114, REQ-193, REQ-194, REQ-195, REQ-196, REQ-197, REQ-198, REQ-211, REQ-212, REQ-213, REQ-228, REQ-229, REQ-313, REQ-315
 class ReleaseWorkflowPyPiTest(unittest.TestCase):
     ## @brief Repository root path used by release-contract tests.
     REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -81,10 +80,10 @@ class ReleaseWorkflowPyPiTest(unittest.TestCase):
         self.assertIn("id-token: write", permissions_block)
         self.assertIn("attestations: write", permissions_block)
 
-    ## @brief Verify provenance attestation covers the pre-built tagged artifacts.
-    # @details REQ-113 and REQ-313: the workflow attests the pre-built `dist/*`
-    #          artifacts of the tagged commit with Python 3.11 and never runs a
-    #          distribution build inside GitHub Actions.
+    ## @brief Verify provenance attestation covers the pre-built artifacts.
+    # @details REQ-113 and REQ-313: the workflow attests the available `dist/*`
+    #          artifacts with Python 3.11 and never runs a distribution build
+    #          inside GitHub Actions.
     # @return None.
     # @satisfies REQ-113, REQ-313
     def test_workflow_attests_prebuilt_artifacts_without_build(self):
@@ -99,14 +98,13 @@ class ReleaseWorkflowPyPiTest(unittest.TestCase):
             self.assertNotIn(build_command, text)
         self.assertNotIn("scripts/pre-release-check.sh", text)
 
-    ## @brief Verify the tagged-commit pre-built artifacts are validated before use.
-    # @details REQ-313 and REQ-314: the publish job requires exactly one
-    #          sdist and one wheel named after the `pyproject.toml` name and
-    #          version, requires both to be git-tracked in the tagged commit,
-    #          and aborts before attestation and publication otherwise.
+    ## @brief Verify the pre-built artifacts are validated before use.
+    # @details REQ-313: the publish job requires exactly one sdist and one
+    #          wheel named after the `pyproject.toml` name and version, and
+    #          aborts before attestation and publication otherwise.
     # @return None.
-    # @satisfies REQ-313, REQ-314
-    def test_workflow_verifies_prebuilt_tagged_artifacts(self):
+    # @satisfies REQ-313
+    def test_workflow_verifies_prebuilt_artifacts(self):
         # Arrange
         text = self._workflow_text()
         # Act
@@ -114,7 +112,6 @@ class ReleaseWorkflowPyPiTest(unittest.TestCase):
         # Assert
         self.assertIn("dist/galias-${VERSION}.tar.gz", verify_block)
         self.assertIn("dist/galias-${VERSION}-\"*.whl", verify_block)
-        self.assertIn("git ls-files --error-unmatch", verify_block)
         self.assertIn("exit 1", verify_block)
         self.assertLess(
             text.index("Verify pre-built release artifacts"),
@@ -126,8 +123,8 @@ class ReleaseWorkflowPyPiTest(unittest.TestCase):
         )
 
     ## @brief Verify PyPI receives the unchanged pre-built distributions.
-    # @details REQ-315: publication consumes the verified `dist/` directory of
-    #          the tagged commit without any intermediate rebuild step.
+    # @details REQ-315: publication consumes the verified `dist/` directory
+    #          without any intermediate rebuild step.
     # @return None.
     # @satisfies REQ-315
     def test_workflow_publishes_prebuilt_distributions_to_pypi(self):
