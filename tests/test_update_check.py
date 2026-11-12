@@ -332,8 +332,16 @@ class UpdateCheckTest(unittest.TestCase):
         )
         self.assertEqual(data["last_check_unix"], 0)
 
-    def test_upgrade_self_installs_latest_pypi_release(self):
-        # REQ-001: default --upgrade runs the standard unforced install from PyPI.
+    ## @brief Verify the default PyPI self-upgrade re-resolves the latest release (REQ-001).
+    # @details Defect reproducer: `uv tool install galias` reuses an already-satisfied
+    #          unpinned requirement, so an installed older release survives the command
+    #          even though uv prints a successful install. The default argv therefore
+    #          MUST carry the `--upgrade` resolver option while still carrying no
+    #          REQ-236 forcing option and no GitHub `--from` override.
+    # @param self {UpdateCheckTest} Isolated test instance.
+    # @return {None} Assert the REQ-001 latest-release install argv.
+    def test_upgrade_self_pypi_argv_re_resolves_latest_release(self):
+        # REQ-001: default --upgrade installs the latest PyPI release.
         with mock.patch.object(core, "_is_linux_platform", return_value=True):
             with mock.patch.object(core, "_run_checked") as run_checked:
                 core.upgrade_self(Path("/repo"))
@@ -343,8 +351,13 @@ class UpdateCheckTest(unittest.TestCase):
                 "tool",
                 "install",
                 core.UV_TOOL_NAME,
+                "--upgrade",
             ]
         )
+        argv = run_checked.call_args.args[0]
+        self.assertNotIn("--from", argv)
+        for forcing_option in core.UV_TOOL_FORCE_UPGRADE_OPTIONS:
+            self.assertNotIn(forcing_option, argv)
 
     ## @brief Verify `--upgrade --force` appends the uv forcing options (REQ-236).
     # @details Mock the platform and subprocess boundaries; assert the PyPI

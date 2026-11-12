@@ -152,7 +152,7 @@
         - `_assign_confirmation(...)`, `_overwrite_confirmation(...)`, and `_unset_confirmation(...)`: build the English mutation confirmations [`src/git_alias/configuration.py`]
         - `print_raw(...)`: emit exact stored bytes with stderr-only labels [`src/git_alias/configuration.py`]
         - External boundary: file I/O limited to the two configuration JSON files, including the global auto-initialization write.
-      - `upgrade_self(...)`: Linux-gated self-upgrade flow selecting the PyPI default release or the newest GitHub release tag via `--develop` (equivalent `--dev`), appending the uv forcing options under `--force`, and aborting without install when tag resolution fails [`src/git_alias/core.py`]
+      - `upgrade_self(...)`: Linux-gated self-upgrade flow selecting the PyPI default release or the newest GitHub release tag via `--develop` (equivalent `--dev`), appending the `--upgrade` resolver option on the unforced PyPI path so uv re-resolves and installs the latest published release, appending the uv forcing options under `--force`, and aborting without install when tag resolution fails [`src/git_alias/core.py`]
         - `_fetch_github_latest_release_tag(...)`: resolve the raw latest GitHub release `tag_name` for the upgrade ref, printing the standardized diagnostic with the derived failure reason on failure [`src/git_alias/core.py`]
           - `_fetch_github_release_tag_with_reason(...)`: perform the GitHub latest-release HTTP GET, decode the JSON payload, and return the raw `tag_name` with the derived failure reason [`src/git_alias/core.py`]
             - `_github_failure_reason(...)`: compose the non-empty English failure reason from the HTTP status code, reason phrase, and API `message` field [`src/git_alias/core.py`]
@@ -339,7 +339,7 @@
   - Threads: no explicit threads detected.
 - Internal Call-Trace Tree:
   - `scripts/g.sh::<module_body>(...)`: `exec uv run --project <repo> python -m git_alias ...` delegation [`scripts/g.sh`]
-  - `upgrade_self(...)`: spawn `uv tool install` from the PyPI default source or the newest GitHub release tag ref (`--develop`, equivalent `--dev`) when Linux; `--force` appends the forcing options `--force --reinstall --refresh` to the selected install argv [`src/git_alias/core.py`]
+  - `upgrade_self(...)`: spawn `uv tool install` from the PyPI default source or the newest GitHub release tag ref (`--develop`, equivalent `--dev`) when Linux; the unforced PyPI argv carries the `--upgrade` resolver option so an already-installed older release is replaced by the latest published release, and `--force` appends the forcing options `--force --reinstall --refresh` to the selected install argv [`src/git_alias/core.py`]
   - `uninstall_self(...)`: spawn `uv tool uninstall` when Linux [`src/git_alias/core.py`]
 - External Boundaries:
   - External `uv` binary and package-management side effects.
@@ -466,7 +466,7 @@
 - EDGE: PROC:main -> PROC:uv
   - Mechanism: OS subprocess spawn
   - Endpoint/Channel: process argv plus stdio
-  - Payload/Data-Shape: conditional Linux-only `uv tool` argv sequences sourced from PyPI by default or from the newest GitHub release tag ref (`git+...@<tag>`) with `--upgrade --develop` (equivalent `--dev`); `--upgrade --force` adds the forcing options `--force --reinstall --refresh` to the selected argv sequence
+  - Payload/Data-Shape: conditional Linux-only `uv tool` argv sequences sourced from PyPI by default, where the unforced default argv carries the `--upgrade` resolver option that forces re-resolution of the latest published release, or from the newest GitHub release tag ref (`git+...@<tag>`) with `--upgrade --develop` (equivalent `--dev`); `--upgrade --force` adds the forcing options `--force --reinstall --refresh` to the selected argv sequence
   - Evidence: `src/git_alias/core.py`
 - EDGE: PROC:main -> PROC:gzip
   - Mechanism: OS subprocess spawn with pipe-based IPC

@@ -90,8 +90,9 @@ GITHUB_UPGRADE_SOURCE = f"git+https://github.com/{GITHUB_REPOSITORY}"
 ## @details Executes `uv tool install galias` with no forcing options so the
 ##          standard install/update process applies (REQ-001); the default
 ##          path carries no `--from` override, keeping PyPI the only default
-##          upgrade source (REQ-199, REQ-201). Forced upgrades append
-##          `UV_TOOL_FORCE_UPGRADE_OPTIONS` (REQ-236).
+##          upgrade source (REQ-199, REQ-201). The unforced path appends
+##          `UV_TOOL_UPGRADE_RESOLVER_OPTIONS` and forced upgrades append
+##          `UV_TOOL_FORCE_UPGRADE_OPTIONS` (REQ-001, REQ-236).
 ## @satisfies REQ-001, REQ-199, REQ-236
 UV_TOOL_UPGRADE_COMMAND = (
     "uv",
@@ -99,6 +100,23 @@ UV_TOOL_UPGRADE_COMMAND = (
     "install",
     UV_TOOL_NAME,
 )
+
+## @brief Resolver options forcing uv to install the latest PyPI release.
+## @details Tuple `("--upgrade",)` appended to `UV_TOOL_UPGRADE_COMMAND` on the
+##          unforced PyPI path. `uv tool install galias` alone reuses the
+##          already-installed tool whenever the recorded unpinned requirement
+##          `galias` is satisfied, so an older installed release survives the
+##          command (observed defect: PyPI 0.52.2 available, upgrade reported
+##          `Installed 2 executables: g, galias`, installed version stayed
+##          0.52.1). `--upgrade` makes uv re-resolve the requirement against the
+##          index and therefore install the latest release required by REQ-001.
+##          It is a resolver option, not a REQ-236 forcing option, so the
+##          unforced path still performs a standard download and installation.
+##          Not appended to the REQ-236 forced argv, whose
+##          `--force --reinstall --refresh` options already re-resolve and
+##          reinstall, nor to the REQ-209 tag-pinned GitHub argv.
+## @satisfies REQ-001
+UV_TOOL_UPGRADE_RESOLVER_OPTIONS = ("--upgrade",)
 
 ## @brief Forcing options appended to `uv tool install` for forced self-upgrades.
 ## @details Tuple `("--force", "--reinstall", "--refresh")` appended to the
@@ -3645,11 +3663,14 @@ def _print_non_linux_management_command(
 #          `_fetch_github_latest_release_tag` (REQ-208) and installs through
 #          `_build_github_upgrade_command` (REQ-209); resolution failure
 #          aborts with an explicit English error and non-zero exit before any
-#          install (REQ-210). When `force` is True the executed argv appends
+#          install (REQ-210). The unforced PyPI path runs
+#          `UV_TOOL_UPGRADE_COMMAND + UV_TOOL_UPGRADE_RESOLVER_OPTIONS` so uv
+#          re-resolves the index and installs the latest release even when an
+#          older release already satisfies the recorded unpinned requirement
+#          (REQ-001). When `force` is True the executed argv appends
 #          `UV_TOOL_FORCE_UPGRADE_OPTIONS` (`--force --reinstall --refresh`)
 #          so uv performs a forced download plus complete reinstallation
-#          (REQ-236, REQ-237); when `force` is False the standard unforced
-#          install/update process runs (REQ-001, REQ-209). Non-Linux hosts
+#          (REQ-236, REQ-237) without the resolver option. Non-Linux hosts
 #          receive the exact manual command matching the selected source and
 #          force mode without local execution (REQ-129).
 # @param repo_root Input parameter consumed by `upgrade_self`.
@@ -3658,8 +3679,8 @@ def _print_non_linux_management_command(
 #        (REQ-001).
 # @param force {bool} When True, append the uv forcing options
 #        `--force --reinstall --refresh` to the selected install argv
-#        (REQ-236, REQ-237); when False, run the standard install with no
-#        forcing options (REQ-001, REQ-209).
+#        (REQ-236, REQ-237); when False, run the standard install that
+#        re-resolves the latest release (REQ-001, REQ-209).
 # @return None; side-effect: uv tool install subprocess, manual-command
 #         guidance, or English abort diagnostic with non-zero exit.
 # @exception SystemExit Exit code 1 when REQ-208 tag resolution fails (REQ-210).
@@ -3674,6 +3695,8 @@ def upgrade_self(
         command = UV_TOOL_UPGRADE_COMMAND
         if force:
             command = UV_TOOL_UPGRADE_COMMAND + UV_TOOL_FORCE_UPGRADE_OPTIONS
+        else:
+            command = UV_TOOL_UPGRADE_COMMAND + UV_TOOL_UPGRADE_RESOLVER_OPTIONS
         if not _is_linux_platform():
             _print_non_linux_management_command("upgrade", command)
             return
