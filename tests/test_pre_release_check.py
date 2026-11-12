@@ -9,31 +9,31 @@ HDT artifacts (Refactorer mode):
 - UUT list:
   - `scripts/pre-release-check.sh` script contract (Level 0, static:
     presence, executable permission, Bash syntax)
-  - `scripts/pre-release-check.sh` prerequisite and guard steps (Level 1,
+  - `scripts/pre-release-check.sh` prerequisite steps (Level 1,
     subprocess in a sandbox repository)
-  - `scripts/pre-release-check.sh` full step flow, cleanup, and integrity
-    verification (Level 2, subprocess composing `scripts/build.sh`)
+  - `scripts/pre-release-check.sh` full step flow, temporary-directory build,
+    cleanup, and integrity verification (Level 2, subprocess composing
+    `scripts/build.sh --output-dir`)
 - Call graph: `pre-release-check.sh` -> `git --version`, `uv --version`,
-  `validate_repository_structure`, `check_shell_syntax`,
-  `check_preexisting_artifacts` -> `build.sh --list-artifacts`,
-  `record_baseline`, `uv lock --check`, `uv run python` checks,
-  `uv run pytest`, `build.sh`, artifact validation steps, `on_exit` ->
-  `cleanup_generated_artifacts` -> `build.sh --clean`,
+  `validate_repository_structure`, `check_shell_syntax`, `record_baseline`,
+  `uv lock --check`, `uv run python` checks, `uv run pytest`,
+  `build_release_artifacts` -> `build.sh --output-dir`, artifact validation
+  steps, `on_exit` -> `cleanup_generated_artifacts`,
   `verify_repository_integrity`.
 - External dependencies to isolate: `uv` replaced by a deterministic fake;
   repository replaced by a temporary git sandbox; `HOME`, `TMPDIR`, and git
   configuration redirected to temporary paths; process interruption
   synchronized through a FIFO instead of timing.
 - Test matrix: script contract (REQ-217); full step sequence, progress
-  output, and zero residue from a foreign working directory (REQ-218,
-  REQ-220, REQ-221, REQ-222, REQ-224, REQ-226, REQ-227, REQ-300);
-  preservation of pre-existing content (REQ-223, REQ-227, REQ-298);
-  fail-fast on the first failing step (REQ-219, REQ-225); missing `git`
-  and missing `uv` (REQ-219); pre-existing artifact guard (REQ-290);
-  failing tests, failing build, and missing artifact with cleanup
-  (REQ-225, REQ-226, REQ-299); leftover file, modified tracked file, and
-  tracked cleanup target (REQ-288, REQ-298, REQ-299); signal interruption
-  (REQ-297).
+  output, temporary-directory artifacts, and zero residue from a foreign
+  working directory (REQ-218, REQ-220, REQ-221, REQ-222, REQ-224, REQ-226,
+  REQ-227, REQ-300); preservation of pre-existing content (REQ-223, REQ-227,
+  REQ-298); fail-fast on the first failing step (REQ-219, REQ-225); missing
+  `git` and missing `uv` (REQ-219); independence from pre-existing `dist/`
+  content (REQ-323, REQ-324, REQ-325); failing tests, failing build, and
+  missing artifact with cleanup (REQ-225, REQ-226, REQ-299); leftover file,
+  modified tracked file, and tracked cleanup target (REQ-288, REQ-298,
+  REQ-299); signal interruption (REQ-297).
 - Execution plan: CI runs the suite through `uv run pytest`; developers
   run `uv run pytest tests/test_pre_release_check.py`.
 """
@@ -56,7 +56,7 @@ from release_scripts_support import REPO_ROOT, create_sandbox, write_executable
 #          root resolution, fail-fast semantics, guaranteed cleanup,
 #          repository-integrity verification, and signal handling inside
 #          hermetic sandbox repositories.
-# @satisfies REQ-217, REQ-218, REQ-219, REQ-220, REQ-221, REQ-222, REQ-223, REQ-224, REQ-225, REQ-226, REQ-227, REQ-288, REQ-290, REQ-297, REQ-298, REQ-299, REQ-300
+# @satisfies REQ-217, REQ-218, REQ-219, REQ-220, REQ-221, REQ-222, REQ-223, REQ-224, REQ-225, REQ-226, REQ-227, REQ-288, REQ-297, REQ-298, REQ-299, REQ-300, REQ-323, REQ-324, REQ-325
 class PreReleaseCheckScriptTest(unittest.TestCase):
     ## @brief Absolute path of the real pre-release-check script under test.
     SCRIPT_PATH = REPO_ROOT / "scripts" / "pre-release-check.sh"
@@ -209,54 +209,48 @@ class PreReleaseCheckScriptTest(unittest.TestCase):
             self.assertNotIn("command not found", completed.stderr)
             self.assertEqual(sandbox.uv_invocations(), [])
 
-    ## @brief Verify pre-existing release artifacts abort the run untouched.
-    # @details The guard fails before the baseline, the lock check, and any
-    #          removal, and reports the `scripts/build.sh --clean` remedy.
+    ## @brief Verify pre-existing `dist/` content never affects the run.
+    # @details A stale release artifact keeps its exact bytes and the run
+    #          passes, because the validation build writes into a temporary
+    #          directory and nothing inspects, lists, or removes `dist/`.
     # @return None.
-    # @satisfies REQ-290
-    def test_script_aborts_when_release_artifacts_preexist(self):
+    # @satisfies REQ-323, REQ-324, REQ-325
+    def test_script_ignores_preexisting_dist_content(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             # Arrange
             sandbox = create_sandbox(Path(tmp_dir))
             existing = sandbox.repo / "dist" / "galias-0.0.1.tar.gz"
             existing.parent.mkdir()
             existing.write_text("previous build", encoding="utf-8")
-            expected_invocations = [["--version"]]
+            expected_status = "?? dist/\n"
             # Act
             completed = sandbox.run(self.SCRIPT_NAME)
             # Assert
-            self.assertEqual(completed.returncode, 1)
-            self.assertIn(
-                "--- [pre-release-check] Step failed: Check for pre-existing release artifacts ---",
-                completed.stderr,
-            )
-            self.assertIn(str(existing), completed.stderr)
-            self.assertIn("scripts/build.sh --clean", completed.stderr)
+            self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+            self.assertIn("--- [pre-release-check] Result: PASSED ---", completed.stdout)
             self.assertEqual(existing.read_text(encoding="utf-8"), "previous build")
-            self.assertEqual(sandbox.uv_invocations(), expected_invocations)
+            self.assertEqual(sandbox.git("status", "--porcelain"), expected_status)
+            self.assertEqual(sandbox.temp_entries(), [])
 
     ## @brief Verify the full step sequence, output, and zero residue.
     # @details Executes from a foreign working directory against a sandbox
     #          path containing a space; asserts the exact `uv` invocation
-    #          order, canonical progress and result lines, and a sandbox
+    #          order, the temporary build directory holding the validated
+    #          artifacts, canonical progress and result lines, and a sandbox
     #          free of artifacts, caches, `.venv`, and temporary directories.
     # @return None.
-    # @satisfies REQ-218, REQ-219, REQ-220, REQ-221, REQ-222, REQ-224, REQ-226, REQ-227, REQ-300
+    # @satisfies REQ-218, REQ-219, REQ-220, REQ-221, REQ-222, REQ-224, REQ-226, REQ-227, REQ-300, REQ-324
     def test_script_executes_full_step_sequence_from_any_working_directory(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             # Arrange
             sandbox = create_sandbox(Path(tmp_dir))
             outside_cwd = Path(tmp_dir) / "elsewhere"
             outside_cwd.mkdir()
-            dist = sandbox.repo / "dist"
-            expected_sdist = str(dist / "galias-1.2.3.tar.gz")
-            expected_wheel = str(dist / "galias-1.2.3-py3-none-any.whl")
             expected_progress = [
                 "Check git availability",
                 "Check uv availability",
                 "Validate repository structure",
                 "Check shell script syntax",
-                "Check for pre-existing release artifacts",
                 "Record repository state",
                 "Check dependency lock synchronization",
                 "Check Python sources and project metadata",
@@ -264,7 +258,6 @@ class PreReleaseCheckScriptTest(unittest.TestCase):
                 "Run the full test suite",
                 "Build release artifacts",
                 "Validate release artifacts",
-                "Verify release artifacts are not ignored by git",
                 "Verify wheel installation in an isolated environment",
                 "All pre-release checks passed",
                 "Clean up generated artifacts",
@@ -284,13 +277,17 @@ class PreReleaseCheckScriptTest(unittest.TestCase):
             self.assertIn('main(["ver"], check_updates=False)', invocations[3][3])
             self.assertEqual(invocations[4], ["run", "pytest"])
             self.assertEqual(invocations[5][:2], ["build", "--out-dir"])
-            self.assertEqual(
-                invocations[6],
-                ["run", "python", "-", str(sandbox.repo), expected_sdist, expected_wheel],
-            )
+            validated = invocations[6]
+            self.assertEqual(validated[:4], ["run", "python", "-", str(sandbox.repo)])
+            self.assertEqual(len(validated), 6)
+            self.assertTrue(Path(validated[4]).name.endswith(".tar.gz"))
+            self.assertTrue(Path(validated[5]).name.endswith(".whl"))
+            self.assertEqual(Path(validated[4]).parent, Path(validated[5]).parent)
+            self.assertTrue(validated[4].startswith(str(sandbox.tmp_dir)))
+            self.assertFalse(Path(validated[4]).parent.exists())
             self.assertEqual(
                 invocations[7],
-                ["run", "--isolated", "--no-project", "--with", expected_wheel, "python", "-", str(sandbox.repo)],
+                ["run", "--isolated", "--no-project", "--with", validated[5], "python", "-", str(sandbox.repo)],
             )
             progress = [
                 line[len("--- [pre-release-check] "):-len(" ---")]
@@ -388,29 +385,24 @@ class PreReleaseCheckScriptTest(unittest.TestCase):
                 completed.stderr,
             )
 
-    ## @brief Verify an ignored release artifact fails the release check.
-    # @details Appends a root `/dist/` rule to the sandbox `.gitignore` so git
-    #          ignores the built artifacts; the run fails at the not-ignored step
-    #          and reports that step as the failed result.
+    ## @brief Verify an ignored `dist/` rule never affects the validation run.
+    # @details Appends a root `/dist/` rule to the sandbox `.gitignore`; the
+    #          run still passes because no artifact is built into `dist/` and
+    #          no git-ignore verification of release artifacts exists.
     # @return None.
-    # @satisfies REQ-295, REQ-299, REQ-300
-    def test_script_fails_when_release_artifacts_are_ignored(self):
+    # @satisfies REQ-323, REQ-325
+    def test_script_ignores_dist_gitignore_rules(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             # Arrange
             sandbox = create_sandbox(Path(tmp_dir))
             gitignore = sandbox.repo / ".gitignore"
             gitignore.write_text(gitignore.read_text(encoding="utf-8") + "\n/dist/\n", encoding="utf-8")
-            expected_returncode = 1
             # Act
             completed = sandbox.run(self.SCRIPT_NAME)
             # Assert
-            self.assertEqual(completed.returncode, expected_returncode)
-            self.assertIn("is ignored by git", completed.stderr)
-            self.assertIn(
-                "--- [pre-release-check] Result: FAILED (Verify release artifacts are not ignored by git) ---",
-                completed.stderr,
-            )
-            self.assertNotIn("Result: PASSED", completed.stdout)
+            self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+            self.assertIn("--- [pre-release-check] Result: PASSED ---", completed.stdout)
+            self.assertFalse((sandbox.repo / "dist").exists())
 
     ## @brief Verify a tracked file modified by a step fails the run.
     # @return None.

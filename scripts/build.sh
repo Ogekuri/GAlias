@@ -16,11 +16,14 @@
 #          artifact when the build failed (REQ-284).
 #          `--clean` executes the same cleanup without building (REQ-286);
 #          `--list-artifacts` prints existing `dist/` release artifacts
-#          (REQ-287). Non-generated `dist/` files are never deleted.
+#          (REQ-287); `--output-dir <directory>` builds the same artifact pair
+#          into a caller-supplied directory while creating, listing, cleaning,
+#          and modifying nothing under `dist/` (REQ-326). Non-generated `dist/`
+#          files are never deleted.
 #          The repository root derives from the script location, so invocation
 #          works from any working directory (REQ-280).
 #          Complexity: O(N) over `dist/` entries plus the delegated build.
-# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285, REQ-286, REQ-287, REQ-288, REQ-307, REQ-316, REQ-317
+# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285, REQ-286, REQ-287, REQ-288, REQ-307, REQ-316, REQ-317, REQ-326
 
 set -Eeuo pipefail
 
@@ -37,6 +40,15 @@ SCRIPT_DIR="$(cd -- "${SCRIPT_DIR:-/}" && pwd -P)"
 REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
 ## @brief Canonical destination directory of the final release artifacts (REQ-280).
 DIST_DIR="$REPO_ROOT/dist"
+## @brief Directory receiving the artifacts of the active build mode.
+# @details Equals the canonical `dist/` directory in the default mode and the
+#          `--output-dir` argument in the REQ-326 mode; only this directory is
+#          collected, installed into, and summarized.
+ARTIFACT_DIR="$DIST_DIR"
+## @brief Flag set to 1 when the active mode owns the canonical `dist/` directory.
+# @details `--output-dir` sets it to 0 so no cleanup, listing, or removal ever
+#          reaches `dist/` (REQ-326).
+MANAGE_DIST=1
 ## @brief Normalized distribution name prefixing every generated artifact filename.
 # @details Equals the `pyproject.toml` `[project].name` value mandated by REQ-196.
 DIST_NAME="galias"
@@ -85,17 +97,18 @@ fail() {
 
 ## @brief Print command usage.
 # @details O(1); documents the default build mode and the `--clean`,
-#          `--list-artifacts`, and `--help` options.
+#          `--list-artifacts`, `--output-dir`, and `--help` options.
 # @return None; side-effect: usage text on stdout.
-# @satisfies REQ-287
+# @satisfies REQ-287, REQ-326
 print_usage() {
   cat <<'USAGE'
-Usage: scripts/build.sh [--clean | --list-artifacts | --help]
+Usage: scripts/build.sh [--clean | --list-artifacts | --output-dir <directory> | --help]
 
-  (no option)       Build the sdist and wheel release artifacts into dist/.
-  --clean           Remove generated release artifacts and build intermediates.
-  --list-artifacts  Print generated release artifacts currently in dist/.
-  --help            Print this usage text.
+  (no option)          Build the sdist and wheel release artifacts into dist/.
+  --clean              Remove generated release artifacts and build intermediates.
+  --list-artifacts     Print generated release artifacts currently in dist/.
+  --output-dir <dir>   Build the sdist and wheel into <dir>, leaving dist/ untouched.
+  --help               Print this usage text.
 USAGE
 }
 
@@ -144,17 +157,19 @@ remove_generated_path() {
   return 0
 }
 
-## @brief Collect every release artifact present in `dist/`.
-# @details O(N) over matching `dist/` entries; selects regular files named
+## @brief Collect every release artifact present in the active artifact directory.
+# @details O(N) over matching entries; selects regular files named
 #          `<DIST_NAME>-*.tar.gz` or `<DIST_NAME>-*.whl` for every version
 #          number, including git-tracked artifacts, so no previous build
-#          survives a new build (REQ-282).
+#          survives a new default-mode build (REQ-282). The scan targets
+#          `ARTIFACT_DIR`, which is the run-scoped output directory in the
+#          REQ-326 mode and therefore never inspects `dist/`.
 # @return None; side-effect: overwrites global array `RELEASE_ARTIFACTS`.
-# @satisfies REQ-282, REQ-287
+# @satisfies REQ-282, REQ-287, REQ-326
 collect_release_artifacts() {
   local candidate
   RELEASE_ARTIFACTS=()
-  for candidate in "$DIST_DIR/$DIST_NAME"-*.tar.gz "$DIST_DIR/$DIST_NAME"-*.whl; do
+  for candidate in "$ARTIFACT_DIR/$DIST_NAME"-*.tar.gz "$ARTIFACT_DIR/$DIST_NAME"-*.whl; do
     if [ ! -f "$candidate" ]; then
       continue
     fi
@@ -377,40 +392,42 @@ verify_staged_artifacts() {
   verify_sdist_content "$STAGED_SDIST"
 }
 
-## @brief Move verified staged artifacts into `dist/`.
-# @details O(1) moves; creates `dist/` when absent and refuses to overwrite
-#          an existing destination, which after the pre-build cleanup can only
-#          be a concurrently created file (REQ-282, REQ-283).
+## @brief Move verified staged artifacts into the active artifact directory.
+# @details O(1) moves; creates the destination directory when absent and
+#          refuses to overwrite an existing destination, which after the
+#          pre-build cleanup can only be a concurrently created file (REQ-282,
+#          REQ-283). The REQ-326 mode creates and fills only the requested
+#          directory, never `dist/`.
 # @return None; never returns when installation fails.
-# @satisfies REQ-280, REQ-283
+# @satisfies REQ-280, REQ-283, REQ-326
 install_staged_artifacts() {
   local staged destination
-  if [ ! -d "$DIST_DIR" ]; then
-    mkdir -p -- "$DIST_DIR" || fail "Unable to create '$DIST_DIR'"
+  if [ ! -d "$ARTIFACT_DIR" ]; then
+    mkdir -p -- "$ARTIFACT_DIR" || fail "Unable to create '$ARTIFACT_DIR'"
     DIST_CREATED=1
   fi
   for staged in "$STAGED_SDIST" "$STAGED_WHEEL"; do
-    destination="$DIST_DIR/${staged##*/}"
+    destination="$ARTIFACT_DIR/${staged##*/}"
     if [ -e "$destination" ] || [ -L "$destination" ]; then
       fail "Refusing to overwrite existing file '$destination'"
     fi
-    mv -- "$staged" "$destination" || fail "Unable to move '${staged##*/}' into '$DIST_DIR'"
+    mv -- "$staged" "$destination" || fail "Unable to move '${staged##*/}' into '$ARTIFACT_DIR'"
   done
 }
 
 ## @brief Print the summary of produced release artifacts.
 # @details O(N) over artifacts; prints path, byte size, and the SHA-256
 #          digest when `sha256sum` is available (REQ-285). Requires exactly
-#          two generated artifacts in `dist/`.
+#          two generated artifacts in the active artifact directory.
 # @return None; never returns when the artifact count differs from two.
-# @satisfies REQ-285
+# @satisfies REQ-285, REQ-326
 print_build_summary() {
   local artifact size digest
   collect_release_artifacts
   if [ "${#RELEASE_ARTIFACTS[@]}" -ne 2 ]; then
-    fail "Expected exactly two release artifacts in '$DIST_DIR', found ${#RELEASE_ARTIFACTS[@]}"
+    fail "Expected exactly two release artifacts in '$ARTIFACT_DIR', found ${#RELEASE_ARTIFACTS[@]}"
   fi
-  log_step "Build completed: ${#RELEASE_ARTIFACTS[@]} release artifacts in $DIST_DIR"
+  log_step "Build completed: ${#RELEASE_ARTIFACTS[@]} release artifacts in $ARTIFACT_DIR"
   for artifact in "${RELEASE_ARTIFACTS[@]}"; do
     size="$(wc -c < "$artifact")" || fail "Unable to read the size of '$artifact'"
     size="$((size))"
@@ -454,7 +471,8 @@ on_exit() {
   fi
   if [ "$status" -ne 0 ] && [ "$BUILD_STARTED" -eq 1 ]; then
     remove_release_artifacts || log_error "Unable to remove partial release artifacts"
-    if [ "$DIST_CREATED" -eq 1 ]; then
+    remove_build_intermediates || log_error "Unable to remove build intermediates"
+    if [ "$MANAGE_DIST" -eq 1 ] && [ "$DIST_CREATED" -eq 1 ]; then
       remove_empty_dist_dir
     fi
   fi
@@ -465,15 +483,17 @@ on_exit() {
 }
 
 ## @brief Execute the complete release-artifact build.
-# @details Registers the exit and signal traps, validates prerequisites,
-#          runs the REQ-282/REQ-316/REQ-288 cleanup of every previous build,
-#          runs `uv build` into the staging directory, verifies and installs
-#          the artifacts, and prints the summary. Every step aborts the
-#          script on failure (REQ-285); the exit trap removes every
-#          intermediate so only the produced artifacts remain (REQ-284,
-#          REQ-317).
+# @details Registers the exit and signal traps, validates prerequisites, and
+#          branches on the active mode: the default mode runs the
+#          REQ-282/REQ-316/REQ-288 cleanup of every previous build, while the
+#          REQ-326 mode removes only `build/` and `src/*.egg-info` and creates
+#          the requested output directory without touching `dist/`. Both modes
+#          run `uv build` into the staging directory, verify and install the
+#          artifacts, and print the summary. Every step aborts the script on
+#          failure (REQ-285); the exit trap removes every intermediate so only
+#          the produced artifacts remain (REQ-284, REQ-317).
 # @return None; exits non-zero on the first failing step.
-# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285, REQ-316, REQ-317
+# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285, REQ-316, REQ-317, REQ-326
 run_build() {
   trap on_exit EXIT
   trap 'exit 130' INT
@@ -483,9 +503,15 @@ run_build() {
   log_step "Check build prerequisites"
   check_build_prerequisites
 
-  log_step "Clean previous build outputs"
   BUILD_STARTED=1
-  run_cleanup || fail "Unable to clean previous build outputs"
+  if [ "$MANAGE_DIST" -eq 1 ]; then
+    log_step "Clean previous build outputs"
+    run_cleanup || fail "Unable to clean previous build outputs"
+  else
+    log_step "Clean build intermediates"
+    remove_build_intermediates || fail "Unable to clean build intermediates"
+    mkdir -p -- "$ARTIFACT_DIR" || fail "Unable to create '$ARTIFACT_DIR'"
+  fi
 
   log_step "Build sdist and wheel"
   STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/galias-build.XXXXXX")" \
@@ -495,7 +521,7 @@ run_build() {
   log_step "Verify built artifacts"
   verify_staged_artifacts
 
-  log_step "Install release artifacts into dist/"
+  log_step "Install release artifacts"
   install_staged_artifacts
 
   print_build_summary
@@ -508,14 +534,40 @@ if command -v git >/dev/null 2>&1 \
   IN_GIT_WORK_TREE=1
 fi
 
-if [ "$#" -gt 1 ]; then
-  log_error "Expected at most one option, got $#"
-  print_usage >&2
-  exit 2
+if [ "$#" -gt 0 ]; then
+  case "$1" in
+    --output-dir)
+      if [ "$#" -ne 2 ]; then
+        log_error "Option --output-dir requires exactly one directory argument"
+        print_usage >&2
+        exit 2
+      fi
+      case "$2" in
+        "") log_error "Option --output-dir requires a non-empty directory argument"
+            print_usage >&2
+            exit 2 ;;
+        /*) ARTIFACT_DIR="$2" ;;
+        *) ARTIFACT_DIR="$REPO_ROOT/$2" ;;
+      esac
+      MANAGE_DIST=0
+      ;;
+    --clean | --list-artifacts | --help | -h)
+      if [ "$#" -ne 1 ]; then
+        log_error "Expected at most one option, got $#"
+        print_usage >&2
+        exit 2
+      fi
+      ;;
+    *)
+      log_error "Unknown option: $1"
+      print_usage >&2
+      exit 2
+      ;;
+  esac
 fi
 
 case "${1:-}" in
-  "")
+  "" | --output-dir)
     run_build
     ;;
   --clean)
@@ -526,10 +578,5 @@ case "${1:-}" in
     ;;
   --help | -h)
     print_usage
-    ;;
-  *)
-    log_error "Unknown option: $1"
-    print_usage >&2
-    exit 2
     ;;
 esac

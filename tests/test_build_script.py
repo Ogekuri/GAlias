@@ -5,8 +5,9 @@ HDT artifacts (Generator mode):
 - UUT list:
   - `scripts/build.sh` script contract (Level 0, static: presence,
     executable permission, Bash syntax)
-  - `scripts/build.sh` option modes `--list-artifacts`, `--clean`, and
-    unknown-option rejection (Level 1, subprocess in a sandbox repository)
+  - `scripts/build.sh` option modes `--list-artifacts`, `--clean`,
+    `--output-dir`, and unknown-option rejection (Level 1, subprocess in a
+    sandbox repository)
   - `scripts/build.sh` default build flow (Level 2, subprocess in a sandbox
     repository with a fake `uv` executable)
 - Call graph: `build.sh` -> `check_build_prerequisites`,
@@ -22,7 +23,8 @@ HDT artifacts (Generator mode):
   artifacts and non-generated preservation (REQ-282, REQ-316); repeated
   builds (REQ-282); failed `uv build` (REQ-284, REQ-285); missing
   wheel (REQ-283, REQ-284); missing `uv` (REQ-281); `--clean` (REQ-286);
-  `--list-artifacts` and unknown options (REQ-287).
+  `--list-artifacts` and unknown options (REQ-287); `--output-dir` build
+  isolation from `dist/` and its operand validation (REQ-326).
 - Execution plan: CI runs the suite through `uv run pytest`; developers
   run `uv run pytest tests/test_build_script.py`.
 """
@@ -43,7 +45,7 @@ from release_scripts_support import REPO_ROOT, create_sandbox
 #          pre-build cleanup of every artifact version, post-build residue
 #          removal, failure cleanup, and the auxiliary option modes inside
 #          hermetic sandbox repositories.
-# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285, REQ-286, REQ-287, REQ-288, REQ-316, REQ-317
+# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285, REQ-286, REQ-287, REQ-288, REQ-316, REQ-317, REQ-326
 class BuildScriptTest(unittest.TestCase):
     ## @brief Absolute path of the real build script under test.
     SCRIPT_PATH = REPO_ROOT / "scripts" / "build.sh"
@@ -118,6 +120,50 @@ class BuildScriptTest(unittest.TestCase):
             # Assert
             self.assertEqual(completed.returncode, expected_returncode)
             self.assertIn("Unknown option: --unknown", completed.stderr)
+            self.assertIn("Usage: scripts/build.sh", completed.stderr)
+            self.assertEqual(sandbox.uv_invocations(), [])
+
+    ## @brief Verify `--output-dir` builds outside `dist/` and leaves it untouched.
+    # @details The requested directory receives exactly one sdist and one
+    #          wheel while a pre-existing `dist/` artifact keeps its exact
+    #          bytes and no `dist/` entry is created, listed, or removed.
+    # @return None.
+    # @satisfies REQ-280, REQ-326
+    def test_output_dir_mode_builds_outside_dist(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # Arrange
+            sandbox = create_sandbox(Path(tmp_dir))
+            dist = sandbox.repo / "dist"
+            dist.mkdir()
+            stale = dist / "galias-0.0.1.tar.gz"
+            stale.write_text("stale", encoding="utf-8")
+            output = Path(tmp_dir) / "build output"
+            # Act
+            completed = sandbox.run("build.sh", "--output-dir", str(output))
+            # Assert
+            self.assertEqual(completed.returncode, 0, msg=completed.stderr)
+            self.assertEqual(sorted(entry.name for entry in output.iterdir()), self.EXPECTED_ARTIFACTS)
+            self.assertEqual(sorted(entry.name for entry in dist.iterdir()), ["galias-0.0.1.tar.gz"])
+            self.assertEqual(stale.read_text(encoding="utf-8"), "stale")
+            self.assertFalse((sandbox.repo / "build").exists())
+            self.assertFalse((sandbox.repo / "src" / "galias.egg-info").exists())
+            self.assertEqual(sandbox.temp_entries(), [])
+            self.assertEqual(sandbox.git("status", "--porcelain"), "?? dist/\n")
+            self.assertIn("--- [build] Build completed: 2 release artifacts", completed.stdout)
+
+    ## @brief Verify `--output-dir` requires exactly one directory operand.
+    # @return None.
+    # @satisfies REQ-326
+    def test_output_dir_option_requires_a_directory_operand(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # Arrange
+            sandbox = create_sandbox(Path(tmp_dir))
+            expected_returncode = 2
+            # Act
+            completed = sandbox.run("build.sh", "--output-dir")
+            # Assert
+            self.assertEqual(completed.returncode, expected_returncode)
+            self.assertIn("--output-dir", completed.stderr)
             self.assertIn("Usage: scripts/build.sh", completed.stderr)
             self.assertEqual(sandbox.uv_invocations(), [])
 

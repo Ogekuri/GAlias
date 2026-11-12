@@ -3,16 +3,18 @@
 # @brief Repository-local release-readiness check with guaranteed cleanup.
 # @details Executes, in strict fail-fast order (REQ-225): `git` and Astral
 #          `uv` availability (REQ-219), repository structure validation
-#          (REQ-289), Bash syntax of `scripts/*.sh` (REQ-291), the
-#          pre-existing release-artifact guard (REQ-290), repository-state
+#          (REQ-289), Bash syntax of `scripts/*.sh` (REQ-291), repository-state
 #          baseline capture, `uv lock --check` (REQ-220), Python source and
 #          `pyproject.toml` validity (REQ-292), version consistency through
-#          the `ver` alias (REQ-293), the complete pytest suite (REQ-221),
-#          the release build through `scripts/build.sh` (REQ-222), artifact
-#          validation (REQ-294), git-ignore verification (REQ-295), and an
-#          isolated wheel installation check (REQ-296). The `on_exit` trap
-#          runs on success, failure, and interruption (REQ-297): it removes
-#          every generated artifact (REQ-226, REQ-227), verifies repository
+#          the `ver` alias (REQ-293), the complete pytest suite (REQ-221), the
+#          release build through `scripts/build.sh --output-dir` into a
+#          run-scoped temporary directory (REQ-222, REQ-324), artifact
+#          validation in that directory (REQ-294), and an isolated wheel
+#          installation check (REQ-296). The repository `dist/` directory is
+#          never created, listed, cleaned, or verified (REQ-323), so results
+#          are independent of its content (REQ-325). The `on_exit` trap runs
+#          on success, failure, and interruption (REQ-297): it removes every
+#          generated artifact (REQ-226, REQ-227), verifies repository
 #          integrity against the baseline (REQ-298), preserves the original
 #          failure status (REQ-299), and prints the final result line
 #          (REQ-300). Tracked files are never modified (REQ-223) and
@@ -20,7 +22,7 @@
 #          root derives from the script location (REQ-218). Project scope
 #          note: the project configures no formatter, linter, type checker,
 #          or dependency-audit tool, so no such step exists.
-# @satisfies REQ-217, REQ-218, REQ-219, REQ-220, REQ-221, REQ-222, REQ-223, REQ-224, REQ-225, REQ-226, REQ-227, REQ-288, REQ-289, REQ-290, REQ-291, REQ-292, REQ-293, REQ-294, REQ-295, REQ-296, REQ-297, REQ-298, REQ-299, REQ-300, REQ-308
+# @satisfies REQ-217, REQ-218, REQ-219, REQ-220, REQ-221, REQ-222, REQ-223, REQ-224, REQ-225, REQ-226, REQ-227, REQ-288, REQ-289, REQ-291, REQ-292, REQ-293, REQ-294, REQ-296, REQ-297, REQ-298, REQ-299, REQ-300, REQ-308, REQ-323, REQ-324, REQ-325
 
 set -Eeuo pipefail
 
@@ -39,6 +41,10 @@ REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
 BUILD_SCRIPT="$SCRIPT_DIR/build.sh"
 ## @brief Temporary directory holding repository-state snapshots; outside the repository.
 WORK_DIR=""
+## @brief Temporary directory receiving the validation build artifacts; outside the repository.
+# @details Created for the run and removed at exit, so the validation build never
+#          reads, cleans, or writes the repository `dist/` directory (REQ-323, REQ-324).
+BUILD_DIR=""
 ## @brief Description of the step currently executing, used by failure diagnostics.
 CURRENT_STEP="initialization"
 ## @brief Description of the failed step or interruption; empty while every step passes.
@@ -47,8 +53,6 @@ FAILED_STEP=""
 BASELINE_READY=0
 ## @brief Flag set to 1 when `.venv` existed before the run (REQ-227).
 VENV_PREEXISTED=0
-## @brief Flag set to 1 when `dist/` existed before the run.
-DIST_PREEXISTED=0
 ## @brief Built sdist path resolved by `validate_release_artifacts`.
 SDIST_PATH=""
 ## @brief Built wheel path resolved by `validate_release_artifacts`.
@@ -170,28 +174,6 @@ check_shell_syntax() {
   return 0
 }
 
-## @brief Abort when generated release artifacts already exist in `dist/`.
-# @details O(N); queries `scripts/build.sh --list-artifacts`. Pre-existing
-#          artifacts would be deleted by the build and by cleanup, so the
-#          check fails before any build or removal and reports each path
-#          plus the remedy (REQ-290).
-# @return {int} 0 when no generated artifact pre-exists; 1 otherwise.
-# @satisfies REQ-290
-check_preexisting_artifacts() {
-  local existing
-  if ! existing="$("$BUILD_SCRIPT" --list-artifacts)"; then
-    log_detail "Unable to list release artifacts through '$BUILD_SCRIPT --list-artifacts'"
-    return 1
-  fi
-  if [ -n "$existing" ]; then
-    log_detail "Pre-existing release artifacts would be removed by this check:"
-    printf '%s\n' "$existing" >&2
-    log_detail "Move them elsewhere or remove them with: scripts/build.sh --clean"
-    return 1
-  fi
-  return 0
-}
-
 ## @brief Print the fingerprint of the tracked-file state.
 # @details O(tracked changes); emits `git status --porcelain` for tracked
 #          files followed by the object hash of the unstaged binary diff, so
@@ -218,18 +200,15 @@ snapshot_untracked_files() {
 }
 
 ## @brief Capture the pre-run repository state used by cleanup verification.
-# @details O(N); records `.venv` and `dist/` pre-existence, creates the
-#          temporary snapshot directory, and stores the tracked-state
-#          fingerprint and the untracked-file inventory. Sets
-#          `BASELINE_READY`, which enables cleanup in `on_exit` (REQ-298).
+# @details O(N); records `.venv` pre-existence, creates the temporary snapshot
+#          directory, and stores the tracked-state fingerprint and the
+#          untracked-file inventory. Sets `BASELINE_READY`, which enables
+#          cleanup in `on_exit` (REQ-298). `dist/` is never probed (REQ-323).
 # @return {int} 0 when the baseline is stored; 1 otherwise.
-# @satisfies REQ-227, REQ-298
+# @satisfies REQ-227, REQ-298, REQ-323
 record_baseline() {
   if [ -e "$REPO_ROOT/.venv" ]; then
     VENV_PREEXISTED=1
-  fi
-  if [ -e "$REPO_ROOT/dist" ]; then
-    DIST_PREEXISTED=1
   fi
   if ! WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/galias-pre-release.XXXXXX")"; then
     log_detail "Unable to create the temporary snapshot directory"
@@ -292,27 +271,43 @@ check_version_consistency() {
   uv run python -c 'from git_alias.core import main; main(["ver"], check_updates=False)'
 }
 
+## @brief Build the validation artifacts in a run-scoped temporary directory.
+# @details O(1); creates the `BUILD_DIR` temporary directory outside the
+#          repository and delegates the sdist and wheel build to
+#          `scripts/build.sh --output-dir "$BUILD_DIR"` (REQ-222, REQ-324).
+#          The repository `dist/` directory is neither read nor written
+#          (REQ-323).
+# @return {int} 0 when the build succeeded; non-zero otherwise.
+# @satisfies REQ-222, REQ-323, REQ-324
+build_release_artifacts() {
+  if ! BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/galias-pre-release-build.XXXXXX")"; then
+    log_detail "Unable to create the temporary build directory"
+    return 1
+  fi
+  "$BUILD_SCRIPT" --output-dir "$BUILD_DIR"
+}
+
 ## @brief Validate existence, naming, integrity, and content of built artifacts.
-# @details Requires exactly one sdist and one wheel from
-#          `scripts/build.sh --list-artifacts`, then validates through
-#          `uv run python`: filenames against the `pyproject.toml` name and
-#          version, full archive readability, presence of every
-#          `src/git_alias/*.py` module, license and readme files, metadata
-#          name/version/`Requires-Python`, and wheel console scripts
-#          (REQ-294). Sets `SDIST_PATH` and `WHEEL_PATH`.
+# @details Requires exactly one sdist and one wheel in the run-scoped `BUILD_DIR`
+#          temporary directory, then validates through `uv run python`:
+#          filenames against the `pyproject.toml` name and version, full archive
+#          readability, presence of every `src/git_alias/*.py` module, license
+#          and readme files, metadata name/version/`Requires-Python`, and wheel
+#          console scripts (REQ-294). Sets `SDIST_PATH` and `WHEEL_PATH`.
+#          Never inspects `dist/` (REQ-323).
 # @return {int} 0 when both artifacts are valid; 1 otherwise.
-# @satisfies REQ-294, REQ-308
+# @satisfies REQ-294, REQ-308, REQ-323, REQ-324
 validate_release_artifacts() {
-  local listing artifact
+  local artifact
   local count=0
   SDIST_PATH=""
   WHEEL_PATH=""
-  if ! listing="$("$BUILD_SCRIPT" --list-artifacts)"; then
-    log_detail "Unable to list release artifacts through '$BUILD_SCRIPT --list-artifacts'"
+  if [ -z "$BUILD_DIR" ] || [ ! -d "$BUILD_DIR" ]; then
+    log_detail "Temporary build directory is missing"
     return 1
   fi
-  while IFS= read -r artifact; do
-    if [ -z "$artifact" ]; then
+  for artifact in "$BUILD_DIR"/*.tar.gz "$BUILD_DIR"/*.whl; do
+    if [ ! -f "$artifact" ]; then
       continue
     fi
     count=$((count + 1))
@@ -320,9 +315,9 @@ validate_release_artifacts() {
       *.tar.gz) SDIST_PATH="$artifact" ;;
       *.whl) WHEEL_PATH="$artifact" ;;
     esac
-  done <<< "$listing"
+  done
   if [ "$count" -ne 2 ] || [ -z "$SDIST_PATH" ] || [ -z "$WHEEL_PATH" ]; then
-    log_detail "Expected exactly one sdist and one wheel in dist/, found $count artifact(s)"
+    log_detail "Expected exactly one sdist and one wheel in the temporary build directory, found $count artifact(s)"
     return 1
   fi
   uv run python - "$REPO_ROOT" "$SDIST_PATH" "$WHEEL_PATH" <<'PY'
@@ -425,30 +420,6 @@ print(f"Validated {sdist.name} and {wheel.name} ({len(modules)} package modules,
 PY
 }
 
-## @brief Verify git does not ignore any built release artifact.
-# @details O(1); runs `git check-ignore` on the built sdist and wheel. Exit
-#          status 0 (ignored) fails the check; any status other than 1 (query
-#          error) fails the check, so a `.gitignore` regression hiding artifacts
-#          from git fails the release (REQ-295).
-# @return {int} 0 when both artifacts are not ignored; 1 otherwise.
-# @satisfies REQ-295
-check_artifacts_not_ignored() {
-  local artifact status
-  for artifact in "$SDIST_PATH" "$WHEEL_PATH"; do
-    status=0
-    git -C "$REPO_ROOT" check-ignore -q -- "$artifact" || status=$?
-    if [ "$status" -eq 0 ]; then
-      log_detail "Release artifact '$artifact' is ignored by git"
-      return 1
-    fi
-    if [ "$status" -ne 1 ]; then
-      log_detail "Unable to query git ignore status for '$artifact'"
-      return 1
-    fi
-  done
-  return 0
-}
-
 ## @brief Verify the built wheel installs and loads in an isolated environment.
 # @details Installs the wheel into an ephemeral uv environment detached from
 #          the project (`--isolated --no-project`), imports every package
@@ -531,22 +502,21 @@ remove_generated_path() {
 }
 
 ## @brief Remove every artifact generated by the validation run.
-# @details O(size of artifacts); delegates `dist/` release artifacts,
-#          `build/`, and `src/*.egg-info` removal to `scripts/build.sh --clean`,
-#          then removes `.pytest_cache`, `__pycache__` directories under
-#          `src/` and `tests/`, and a `.venv` created during the run. A
-#          pre-existing `.venv` is preserved and a pre-existing `dist/`
-#          directory is restored when emptied (REQ-226, REQ-227).
+# @details O(size of artifacts); removes the `build/` and `src/*.egg-info`
+#          build intermediates through the tracked-content guard (REQ-288), then
+#          removes `.pytest_cache`, `__pycache__` directories under `src/` and
+#          `tests/`, and a `.venv` created during the run. A pre-existing
+#          `.venv` is preserved (REQ-226, REQ-227). The repository `dist/`
+#          directory is never touched (REQ-323).
 # @return {int} 0 on complete cleanup; 1 on any failure.
-# @satisfies REQ-226, REQ-227, REQ-288
+# @satisfies REQ-226, REQ-227, REQ-288, REQ-323
 cleanup_generated_artifacts() {
   local failed=0
-  local cache_dir search_root
+  local cache_dir search_root intermediate
   local search_roots=()
-  if ! "$BUILD_SCRIPT" --clean; then
-    log_detail "'$BUILD_SCRIPT --clean' failed"
-    failed=1
-  fi
+  for intermediate in "$REPO_ROOT/build" "$REPO_ROOT"/src/*.egg-info; do
+    remove_generated_path "$intermediate" || failed=1
+  done
   remove_generated_path "$REPO_ROOT/.pytest_cache" || failed=1
   for search_root in "$REPO_ROOT/src" "$REPO_ROOT/tests"; do
     if [ -d "$search_root" ]; then
@@ -566,33 +536,20 @@ cleanup_generated_artifacts() {
   if [ "$VENV_PREEXISTED" -ne 1 ]; then
     remove_generated_path "$REPO_ROOT/.venv" || failed=1
   fi
-  if [ "$DIST_PREEXISTED" -eq 1 ] && [ ! -e "$REPO_ROOT/dist" ]; then
-    if ! mkdir -- "$REPO_ROOT/dist"; then
-      log_detail "Unable to restore the pre-existing dist/ directory"
-      failed=1
-    fi
-  fi
   return "$failed"
 }
 
 ## @brief Verify the repository equals its pre-run state after cleanup.
-# @details O(N log N); fails when a generated artifact remains, when the
-#          tracked-file fingerprint differs from the baseline, or when any
+# @details O(N log N); fails when a generated build intermediate remains, when
+#          the tracked-file fingerprint differs from the baseline, or when any
 #          untracked or ignored file absent from the baseline exists outside
-#          `.venv` (REQ-298). Every violation is reported with its paths.
+#          `.venv` (REQ-298). Every violation is reported with its paths. The
+#          repository `dist/` directory is never probed (REQ-323).
 # @return {int} 0 when the repository is intact; 1 otherwise.
-# @satisfies REQ-223, REQ-298
+# @satisfies REQ-223, REQ-298, REQ-323
 verify_repository_integrity() {
   local failed=0
-  local residue remaining leftovers
-  if ! remaining="$("$BUILD_SCRIPT" --list-artifacts)"; then
-    log_detail "Unable to list release artifacts after cleanup"
-    failed=1
-  elif [ -n "$remaining" ]; then
-    log_detail "Release artifacts remain after cleanup:"
-    printf '%s\n' "$remaining" >&2
-    failed=1
-  fi
+  local residue leftovers
   for residue in "$REPO_ROOT/build" "$REPO_ROOT/.pytest_cache" "$REPO_ROOT"/src/*.egg-info; do
     if [ -e "$residue" ]; then
       log_detail "Generated path remains after cleanup: $residue"
@@ -601,10 +558,6 @@ verify_repository_integrity() {
   done
   if [ "$VENV_PREEXISTED" -ne 1 ] && [ -e "$REPO_ROOT/.venv" ]; then
     log_detail "Generated environment remains after cleanup: $REPO_ROOT/.venv"
-    failed=1
-  fi
-  if [ "$DIST_PREEXISTED" -ne 1 ] && [ -e "$REPO_ROOT/dist" ]; then
-    log_detail "Generated directory remains after cleanup: $REPO_ROOT/dist"
     failed=1
   fi
   if ! snapshot_tracked_state > "$WORK_DIR/tracked.after"; then
@@ -682,6 +635,12 @@ on_exit() {
     log_step "Verify repository integrity"
     verify_repository_integrity || cleanup_failed=1
   fi
+  if [ -n "$BUILD_DIR" ] && [ -e "$BUILD_DIR" ]; then
+    if ! rm -rf -- "$BUILD_DIR"; then
+      log_detail "Unable to remove the temporary build directory '$BUILD_DIR'"
+      cleanup_failed=1
+    fi
+  fi
   if [ -n "$WORK_DIR" ] && [ -e "$WORK_DIR" ]; then
     if ! rm -rf -- "$WORK_DIR"; then
       log_detail "Unable to remove the temporary directory '$WORK_DIR'"
@@ -715,15 +674,13 @@ run_step "Check git availability" check_tool_version git
 run_step "Check uv availability" check_tool_version uv
 run_step "Validate repository structure" validate_repository_structure
 run_step "Check shell script syntax" check_shell_syntax
-run_step "Check for pre-existing release artifacts" check_preexisting_artifacts
 run_step "Record repository state" record_baseline
 run_step "Check dependency lock synchronization" uv lock --check
 run_step "Check Python sources and project metadata" check_python_sources
 run_step "Check version consistency" check_version_consistency
 run_step "Run the full test suite" uv run pytest
-run_step "Build release artifacts" "$BUILD_SCRIPT"
+run_step "Build release artifacts" build_release_artifacts
 run_step "Validate release artifacts" validate_release_artifacts
-run_step "Verify release artifacts are not ignored by git" check_artifacts_not_ignored
 run_step "Verify wheel installation in an isolated environment" check_wheel_installation
 CURRENT_STEP="completion"
 log_step "All pre-release checks passed"

@@ -20,7 +20,7 @@
 - ID: PROC:pre-release-check
   - Type: Process
   - Parent Process: null
-  - Role: Bash release-readiness script orchestrating toolchain, structure, syntax, dependency-sync, version-consistency, full-test-suite, release-build, and artifact-validation checks with signal-safe cleanup and repository-integrity verification
+  - Role: Bash release-readiness script orchestrating toolchain, structure, syntax, dependency-sync, version-consistency, full-test-suite, temporary-directory release-build, and artifact-validation checks with signal-safe cleanup and repository-integrity verification, without any `dist/` access
   - Entrypoint Symbols:
     - `scripts/pre-release-check.sh::<module_body>`
   - Defining Files:
@@ -28,7 +28,7 @@
 - ID: PROC:build-sh
   - Type: Process
   - Parent Process: null
-  - Role: Bash release-artifact build script producing one sdist and one wheel in `dist/` through a staged `uv build`, cleaning every previous build output before building, with `--clean` and `--list-artifacts` modes
+  - Role: Bash release-artifact build script producing one sdist and one wheel into `dist/` or into a requested `--output-dir` directory through a staged `uv build`, cleaning every previous build output before a default build, with `--clean`, `--list-artifacts`, and `--output-dir` modes
   - Entrypoint Symbols:
     - `scripts/build.sh::<module_body>`
   - Defining Files:
@@ -246,40 +246,38 @@
       - External boundary: `git --version` and `uv --version` prerequisite probes executed by `check_tool_version(...)`.
       - `scripts/pre-release-check.sh::validate_repository_structure(...)`: require the git work-tree root, packaging manifests, package entry module, `tests/`, and executable `scripts/build.sh` [`scripts/pre-release-check.sh`]
       - `scripts/pre-release-check.sh::check_shell_syntax(...)`: run `bash -n` on every `scripts/*.sh` file [`scripts/pre-release-check.sh`]
-      - `scripts/pre-release-check.sh::check_preexisting_artifacts(...)`: abort when `scripts/build.sh --list-artifacts` reports pre-existing release artifacts [`scripts/pre-release-check.sh`]
-      - `scripts/pre-release-check.sh::record_baseline(...)`: record `.venv` and `dist/` pre-existence and store the repository-state snapshots enabling cleanup [`scripts/pre-release-check.sh`]
+      - `scripts/pre-release-check.sh::record_baseline(...)`: record `.venv` pre-existence and store the repository-state snapshots enabling cleanup [`scripts/pre-release-check.sh`]
         - `scripts/pre-release-check.sh::snapshot_tracked_state(...)`: fingerprint tracked-file status and unstaged diff content [`scripts/pre-release-check.sh`]
         - `scripts/pre-release-check.sh::snapshot_untracked_files(...)`: inventory untracked and ignored files outside `.venv` [`scripts/pre-release-check.sh`]
       - External boundary: `uv lock --check` dependency-lock synchronization check.
       - `scripts/pre-release-check.sh::check_python_sources(...)`: compile `src/` and `tests/` Python files and parse `pyproject.toml` through `uv run python` [`scripts/pre-release-check.sh`]
       - `scripts/pre-release-check.sh::check_version_consistency(...)`: execute the `ver` alias with update checks disabled through `uv run python` [`scripts/pre-release-check.sh`]
       - External boundary: `uv run pytest` complete unit-test-suite execution.
-      - External boundary: `scripts/build.sh` release-artifact build process.
-      - `scripts/pre-release-check.sh::validate_release_artifacts(...)`: require one sdist and one wheel and validate names, archive integrity, modules, metadata, console scripts, `uv.lock` presence, and the absence of excluded sdist members through `uv run python` [`scripts/pre-release-check.sh`]
-      - `scripts/pre-release-check.sh::check_artifacts_not_ignored(...)`: require `git check-ignore` to report no built artifact as ignored [`scripts/pre-release-check.sh`]
-      - `scripts/pre-release-check.sh::check_wheel_installation(...)`: install the wheel into an isolated uv environment and load modules and console scripts [`scripts/pre-release-check.sh`]
+      - `scripts/pre-release-check.sh::build_release_artifacts(...)`: create the run-scoped temporary build directory and delegate the artifact build to `scripts/build.sh --output-dir <temporary build directory>` [`scripts/pre-release-check.sh`]
+      - `scripts/pre-release-check.sh::validate_release_artifacts(...)`: require one sdist and one wheel in the temporary build directory and validate names, archive integrity, modules, metadata, console scripts, `uv.lock` presence, and the absence of excluded sdist members through `uv run python` [`scripts/pre-release-check.sh`]
+      - `scripts/pre-release-check.sh::check_wheel_installation(...)`: install the temporary-directory wheel into an isolated uv environment and load modules and console scripts [`scripts/pre-release-check.sh`]
     - `scripts/pre-release-check.sh::on_signal(...)`: record the interruption and exit with `128+<signal number>` [`scripts/pre-release-check.sh`]
     - `scripts/pre-release-check.sh::on_error(...)`: report an unexpected command failure outside `run_step` [`scripts/pre-release-check.sh`]
     - `scripts/pre-release-check.sh::on_exit(...)`: exit trap performing cleanup, integrity verification, exit-status resolution, and the final result line [`scripts/pre-release-check.sh`]
-      - `scripts/pre-release-check.sh::cleanup_generated_artifacts(...)`: delegate build outputs to `scripts/build.sh --clean` and remove `.pytest_cache`, `__pycache__` directories, and a `.venv` created during the run [`scripts/pre-release-check.sh`]
+      - `scripts/pre-release-check.sh::cleanup_generated_artifacts(...)`: remove `build/`, `src/*.egg-info`, `.pytest_cache`, `__pycache__` directories, and a `.venv` created during the run, with the same trap removing the temporary build directory [`scripts/pre-release-check.sh`]
         - `scripts/pre-release-check.sh::remove_generated_path(...)`: remove one generated path unless it holds git-tracked content [`scripts/pre-release-check.sh`]
           - `scripts/pre-release-check.sh::has_tracked_content(...)`: query `git ls-files` for tracked content below a path [`scripts/pre-release-check.sh`]
-      - `scripts/pre-release-check.sh::verify_repository_integrity(...)`: fail on remaining artifacts, changed tracked-file state, or new untracked or ignored files [`scripts/pre-release-check.sh`]
+      - `scripts/pre-release-check.sh::verify_repository_integrity(...)`: fail on remaining build intermediates, changed tracked-file state, or new untracked or ignored files [`scripts/pre-release-check.sh`]
         - `scripts/pre-release-check.sh::snapshot_tracked_state(...)`: fingerprint tracked-file status and unstaged diff content [`scripts/pre-release-check.sh`]
         - `scripts/pre-release-check.sh::snapshot_untracked_files(...)`: inventory untracked and ignored files outside `.venv` [`scripts/pre-release-check.sh`]
 - External Boundaries:
-  - External `git`, `uv`, and `bash` executables; `scripts/build.sh` child process; temporary-directory filesystem I/O.
+  - External `git`, `uv`, and `bash` executables; `scripts/build.sh` child process; run-scoped temporary build and snapshot directories; temporary-directory filesystem I/O.
 
 ### PROC:build-sh
 - Entrypoint(s):
-  - `scripts/build.sh::<module_body>`: release-artifact build script that resolves the repository root and dispatches the build, `--clean`, `--list-artifacts`, or `--help` mode [`scripts/build.sh`]
+  - `scripts/build.sh::<module_body>`: release-artifact build script that resolves the repository root and dispatches the build, `--output-dir <directory>`, `--clean`, `--list-artifacts`, or `--help` mode [`scripts/build.sh`]
 - Lifecycle/trigger:
   - Start: OS invokes `scripts/build.sh` directly or `scripts/pre-release-check.sh` spawns it.
-  - Stop: exits 0 with artifacts in `dist/`, or exits non-zero at the first failing step leaving no generated artifact; unknown options exit with status 2.
+  - Stop: exits 0 with artifacts in `dist/` or in the requested `--output-dir` directory, or exits non-zero at the first failing step leaving no generated artifact; unknown options exit with status 2.
   - Threads: no explicit threads detected.
 - Internal Call-Trace Tree:
   - `scripts/build.sh::<module_body>(...)`: resolve repository root from the script location, detect the git work tree, and dispatch the selected mode [`scripts/build.sh`]
-    - `scripts/build.sh::run_build(...)`: register exit and signal traps, clean every previous build output, and execute the fail-fast build steps [`scripts/build.sh`]
+    - `scripts/build.sh::run_build(...)`: register exit and signal traps, then run the default cleanup of every previous build output or, in the `--output-dir` mode, clean only the build intermediates and create the requested directory without touching `dist/`, and execute the fail-fast build steps [`scripts/build.sh`]
       - `scripts/build.sh::check_build_prerequisites(...)`: require `uv`, `pyproject.toml`, and `src/git_alias/` [`scripts/build.sh`]
       - `scripts/build.sh::run_cleanup(...)`: execute the automatic pre-build cleanup removing every `dist/galias-*` release artifact of any version plus intermediates and an emptied `dist/` directory [`scripts/build.sh`]
         - `scripts/build.sh::remove_release_artifacts(...)`: remove every `dist/` release artifact of every version, including git-tracked ones [`scripts/build.sh`]
@@ -292,10 +290,10 @@
       - External boundary: `uv build --out-dir <temporary staging directory>` sdist and wheel build.
       - `scripts/build.sh::verify_staged_artifacts(...)`: require exactly one non-empty sdist and one non-empty wheel in the staging directory [`scripts/build.sh`]
         - `scripts/build.sh::verify_sdist_content(...)`: list the staged sdist members with `tar -tzf` and require the metadata, license, readme, lock file, and package entry module while rejecting `tests/`, `scripts/`, `usereq/`, `MANIFEST.in`, and generated egg-info files other than `SOURCES.txt` [`scripts/build.sh`]
-      - `scripts/build.sh::install_staged_artifacts(...)`: move verified artifacts into `dist/` without overwriting existing files [`scripts/build.sh`]
+      - `scripts/build.sh::install_staged_artifacts(...)`: move verified artifacts into the active artifact directory (`dist/` or the `--output-dir` directory) without overwriting existing files [`scripts/build.sh`]
       - `scripts/build.sh::print_build_summary(...)`: print each produced artifact path, byte size, and SHA-256 digest [`scripts/build.sh`]
       - `scripts/build.sh::fail(...)`: print the error line and exit with status 1 [`scripts/build.sh`]
-    - `scripts/build.sh::on_exit(...)`: build-mode exit trap removing the staging directory and every build intermediate, plus generated `dist/` artifacts after a failed build [`scripts/build.sh`]
+    - `scripts/build.sh::on_exit(...)`: build-mode exit trap removing the staging directory and every build intermediate, plus generated artifacts in the active artifact directory after a failed build [`scripts/build.sh`]
       - `scripts/build.sh::remove_build_intermediates(...)`: remove `build/` and `src/*.egg-info` [`scripts/build.sh`]
       - `scripts/build.sh::remove_release_artifacts(...)`: remove partial generated `dist/` artifacts [`scripts/build.sh`]
       - `scripts/build.sh::remove_empty_dist_dir(...)`: remove a `dist/` directory created by the failed run when empty [`scripts/build.sh`]
@@ -305,7 +303,7 @@
       - `scripts/build.sh::collect_release_artifacts(...)`: select `dist/galias-*.tar.gz` and `dist/galias-*.whl` files [`scripts/build.sh`]
     - `scripts/build.sh::print_usage(...)`: print option usage for `--help` and rejected options [`scripts/build.sh`]
 - External Boundaries:
-  - External `uv` and optional `git` executables; `dist/` and temporary staging-directory filesystem I/O.
+  - External `uv` and optional `git` executables; `dist/`, requested `--output-dir`, and temporary staging-directory filesystem I/O.
 
 ### PROC:git
 - Entrypoint(s):
@@ -446,12 +444,12 @@
 - EDGE: PROC:pre-release-check -> PROC:git
   - Mechanism: OS subprocess spawn
   - Endpoint/Channel: process argv plus stdout capture
-  - Payload/Data-Shape: `git --version`, `git rev-parse` work-tree queries, `git status --porcelain`, `git diff --binary`, `git hash-object --stdin`, `git ls-files`, and `git check-ignore` argv sequences with textual results
+  - Payload/Data-Shape: `git --version`, `git rev-parse` work-tree queries, `git status --porcelain`, `git diff --binary`, `git hash-object --stdin`, and `git ls-files` argv sequences with textual results
   - Evidence: `scripts/pre-release-check.sh`
 - EDGE: PROC:pre-release-check -> PROC:build-sh
   - Mechanism: OS subprocess spawn
   - Endpoint/Channel: process argv, exit status, and stdout capture
-  - Payload/Data-Shape: `scripts/build.sh` (build), `scripts/build.sh --clean` (generated-output removal), and `scripts/build.sh --list-artifacts` (newline-separated absolute artifact paths)
+  - Payload/Data-Shape: `scripts/build.sh --output-dir <run-scoped temporary build directory>` artifact build, whose absolute sdist and wheel paths feed the subsequent validation and isolated-installation steps
   - Evidence: `scripts/pre-release-check.sh`, `scripts/build.sh`
 - EDGE: PROC:build-sh -> PROC:uv
   - Mechanism: OS subprocess spawn
