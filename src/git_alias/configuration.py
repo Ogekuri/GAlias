@@ -62,7 +62,8 @@ RULE = Parameter(dict, "Version rule pairing a file selector with an extractor",
 
 ## @brief Canonical ordered schema for every persisted configuration field.
 # @details Global keys stay contiguous in REQ-192 order; Local owns repository
-# branches, the conventional-commit scope, and version rules. No field defines
+# branches, the conventional-commit scope, the release script hooks, and version
+# rules. No field defines
 # constrained choices or dynamic maps today; the schema and renderers fully
 # support both constructs for future fields.
 # @satisfies DES-006, DES-010, REQ-186, REQ-191, REQ-192, REQ-242
@@ -97,6 +98,16 @@ SCHEMA = {
         "default_commit_module": Parameter(
             str, "Default conventional-commit scope; empty omits the scope",
             "", example="core", empty=True, strip=True),
+        "build_script": Parameter(
+            str,
+            "Release build command executed after the version update and before "
+            "the release commit; empty skips the step",
+            "", example="scripts/build.sh", empty=True, strip=True),
+        "pre_release_check": Parameter(
+            str,
+            "Release readiness command executed first and aborting the release "
+            "on a non-zero exit; empty skips the step",
+            "", example="scripts/pre-release-check.sh", empty=True, strip=True),
         "ver_rules": Parameter(
             list, "Version rules selecting files and version extractors",
             [

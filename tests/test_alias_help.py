@@ -307,7 +307,6 @@ class AliasHelpTest(unittest.TestCase):
                     run_release.assert_called_once_with(
                         level,
                         changelog_args=expected_changelog[level],
-                        exec_args=[],
                         dev_release=True,
                     )
 

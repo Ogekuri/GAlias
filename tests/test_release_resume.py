@@ -71,26 +71,25 @@ class ReleaseResumeTest(unittest.TestCase):
         for symbol in ("cmd_chver", "cmd_tg", "cmd_changelog", "_execute_commit", "run_command", "cmd_me"):
             self.enterContext(mock.patch.object(core, symbol, side_effect=AssertionError(symbol)))
 
-    ## @brief Verify standalone recovery, develop-scope parsing, and opaque exec argv.
-    # @details O(1) parser checks; no runtime side effects.
+    ## @brief Verify standalone recovery and develop-scope parsing.
+    # @details O(1) parser checks; no runtime side effects. The removed `--exec`
+    #          option is rejected through the release-flag whitelist (REQ-322).
     # @param self {ReleaseResumeTest} Isolated test instance.
-    # @return {None} Assert REQ-176, REQ-200, and preserved REQ-166 separation.
+    # @return {None} Assert REQ-176, REQ-200, and REQ-322 rejection.
     def test_resume_parser(self):
-        expected_output = (["--resume"], [], False)
+        expected_output = (["--resume"], False)
         self.assertEqual(core._parse_release_flags(["--resume"], "minor"), expected_output)
         self.assertEqual(
             core._parse_release_flags(["--dev", "--resume"], "minor"),
-            (["--resume"], [], True),
+            (["--resume"], True),
         )
         self.assertEqual(
             core._parse_release_flags(["--resume", "--develop"], "minor"),
-            (["--resume"], [], True),
+            (["--resume"], True),
         )
-        self.assertEqual(core._parse_release_flags(["--dev"], "minor"), ([], [], True))
-        self.assertEqual(
-            core._parse_release_flags(["--exec", "build", "--resume"], "minor"),
-            ([], ["build", "--resume"], False),
-        )
+        self.assertEqual(core._parse_release_flags(["--dev"], "minor"), ([], True))
+        with self.assertRaises(SystemExit):
+            core._parse_release_flags(["--exec", "build", "--resume"], "minor")
 
     ## @brief Reject combined recovery and creation options.
     # @details SubTest per invalid argv; parser exits before side effects.

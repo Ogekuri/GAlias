@@ -1,6 +1,8 @@
 import contextlib
 import io
+import subprocess
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from git_alias import core
@@ -150,7 +152,7 @@ class ReleaseFlowTest(unittest.TestCase):
         with mock.patch.object(core, "_run_release_command") as run_release:
             core.cmd_patch(["--include-patch"])
         run_release.assert_called_once_with(
-            "patch", changelog_args=["--include-patch"], exec_args=[], dev_release=False
+            "patch", changelog_args=["--include-patch"], dev_release=False
         )
 
     ## @brief Verify develop-scope flag parsing and dispatch on every level.
@@ -162,12 +164,12 @@ class ReleaseFlowTest(unittest.TestCase):
         with mock.patch.object(core, "_run_release_command") as run_release:
             core.cmd_minor(["--dev", "--include-patch"])
         run_release.assert_called_once_with(
-            "minor", changelog_args=["--include-patch"], exec_args=[], dev_release=True
+            "minor", changelog_args=["--include-patch"], dev_release=True
         )
         with mock.patch.object(core, "_run_release_command") as run_release:
             core.cmd_major(["--develop"])
         run_release.assert_called_once_with(
-            "major", changelog_args=[], exec_args=[], dev_release=True
+            "major", changelog_args=[], dev_release=True
         )
 
     def test_release_commands_reject_unknown_flags(self):
@@ -391,3 +393,98 @@ class ReleaseFlowTest(unittest.TestCase):
             core._execute_release_flow("patch")
 
         create_release_commit.assert_called_once_with("1.2.4")
+
+    ## @brief Verify the configuration-driven release script hooks and their ordering.
+    # @details Empty keys MUST skip both steps; configured keys MUST tokenize the
+    #          command line into argv and run from the repository root, with the
+    #          readiness gate first and the build hook after the version update.
+    # @param self {ReleaseFlowTest} Isolated test instance.
+    # @return {None} Assert REQ-166, REQ-167, REQ-318, and REQ-319 ordering.
+    def test_release_script_hooks_follow_configuration(self):
+        cases = (
+            ("", "", False),
+            ("scripts/build.sh --fast", "scripts/pre-release-check.sh", True),
+        )
+        for build_script, pre_release_check, expected in cases:
+            with self.subTest(build_script=build_script, pre_release_check=pre_release_check):
+                steps = []
+                executed = []
+
+                def record_step(_level, step_name, action):
+                    steps.append(step_name)
+                    if step_name in ("run build script", "run pre-release check script"):
+                        action()
+                    return None
+
+                def record_command(cmd, cwd=None):
+                    executed.append((list(cmd), str(cwd)))
+                    return None
+
+                core.CONFIG["build_script"] = build_script
+                core.CONFIG["pre_release_check"] = pre_release_check
+                with mock.patch.object(
+                    core,
+                    "_ensure_release_prerequisites",
+                    return_value={"master": "master", "develop": "develop", "work": "work"},
+                ), mock.patch.object(core, "get_version_rules", return_value=[("README.md", "x")]), mock.patch.object(
+                    core, "get_git_root", return_value=Path("/synthetic")
+                ), mock.patch.object(
+                    core, "_determine_canonical_version", return_value="1.2.3"
+                ), mock.patch.object(core, "_bump_semver_version", return_value="1.2.4"), mock.patch.object(
+                    core, "_run_release_step", side_effect=record_step
+                ), mock.patch.object(core, "run_command", side_effect=record_command):
+                    core._execute_release_flow("patch")
+
+                self.assertEqual("run pre-release check script" in steps, expected)
+                self.assertEqual("run build script" in steps, expected)
+                if expected:
+                    self.assertLess(
+                        steps.index("run pre-release check script"),
+                        steps.index("update versions"),
+                    )
+                    self.assertLess(
+                        steps.index("update versions"), steps.index("run build script")
+                    )
+                    self.assertLess(
+                        steps.index("run build script"), steps.index("stage files")
+                    )
+                    self.assertEqual(
+                        executed,
+                        [
+                            (["scripts/pre-release-check.sh"], "/synthetic"),
+                            (["scripts/build.sh", "--fast"], "/synthetic"),
+                        ],
+                    )
+                else:
+                    self.assertEqual(executed, [])
+
+    ## @brief Verify a failing pre-release check aborts the release before the version update.
+    # @details Uses the real step wrapper so the failure conversion is asserted;
+    #          the version update and all Git mutations remain unmocked negations.
+    # @param self {ReleaseFlowTest} Isolated test instance.
+    # @return {None} Assert REQ-320 fail-fast semantics.
+    def test_failing_pre_release_check_aborts_release(self):
+        failure = subprocess.CalledProcessError(
+            1, ["scripts/pre-release-check.sh"], stderr=b"readiness failed"
+        )
+        core.CONFIG["pre_release_check"] = "scripts/pre-release-check.sh"
+        core.CONFIG["build_script"] = ""
+        with mock.patch.object(
+            core,
+            "_ensure_release_prerequisites",
+            return_value={"master": "master", "develop": "develop", "work": "work"},
+        ), mock.patch.object(core, "get_version_rules", return_value=[("README.md", "x")]), mock.patch.object(
+            core, "get_git_root", return_value=Path("/synthetic")
+        ), mock.patch.object(
+            core, "_determine_canonical_version", return_value="1.2.3"
+        ), mock.patch.object(core, "_bump_semver_version", return_value="1.2.4"), mock.patch.object(
+            core, "run_command", side_effect=core.CommandExecutionError(failure)
+        ), mock.patch.object(core, "cmd_chver") as chver, mock.patch.object(
+            core, "run_git_cmd"
+        ) as run_git:
+            with self.assertRaises(core.ReleaseError) as raised:
+                core._execute_release_flow("patch")
+        self.assertIn("run pre-release check script", str(raised.exception))
+        self.assertIn("readiness failed", str(raised.exception))
+        chver.assert_not_called()
+        run_git.assert_not_called()

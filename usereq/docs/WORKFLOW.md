@@ -88,10 +88,10 @@
     - `run_command(...)`
   - Defining Files:
     - `src/git_alias/core.py`
-- ID: PROC:exec-command
+- ID: PROC:release-script
   - Type: Process
   - Parent Process: null
-  - Role: External user-supplied command process injected by the `--exec` release option of `major`, `minor`, and `patch`
+  - Role: External release script process configured through the local `build_script` and `pre_release_check` keys of `major`, `minor`, and `patch`
   - Entrypoint Symbols:
     - `run_command(...)`
   - Defining Files:
@@ -204,9 +204,14 @@
           - `_abort_rollback_version_restore(...)`: execute `git revert --abort` and exit non-zero when the version restore fails [`src/git_alias/core.py`]
           - `cmd_chver(...)`: restore the stored application version across version-managed files before the revert commit [`src/git_alias/core.py`]
         - `cmd_major(...)`, `cmd_minor(...)`, and `cmd_patch(...)`: parse release operands and route creation or resume publication [`src/git_alias/core.py`]
-          - `_parse_release_flags(...)`: validate flags, resolve the `--dev`/`--develop` develop scope, and detect standalone `--resume` with optional develop scope [`src/git_alias/core.py`]
+          - `_parse_release_flags(...)`: validate flags, resolve the `--dev`/`--develop` develop scope, and detect standalone `--resume` with optional develop scope, rejecting the removed `--exec` option through the operand whitelist [`src/git_alias/core.py`]
           - `_run_release_command(...)`: route standalone `--resume` to immutable recovery, otherwise to creation, forwarding the develop scope with unified error exits [`src/git_alias/core.py`]
             - `_execute_release_flow(...)`: creation pipeline ending in scoped atomic publication; the develop scope integrates and publishes configured `develop` only while the default integrates `develop` and `master` [`src/git_alias/core.py`]
+              - `_release_script_argv(...)`: resolve the local `pre_release_check` and `build_script` command lines into argv lists, returning `None` for empty values without shell evaluation [`src/git_alias/core.py`]
+                - `get_config_value(...)`: read the configured release script command line [`src/git_alias/core.py`]
+                - `_parse_config_command_parts(...)`: tokenize the configured command line into argv tokens [`src/git_alias/core.py`]
+              - `_run_release_step(...)`: wrap the readiness gate, version update, build hook, and publication steps with release diagnostics [`src/git_alias/core.py`]
+                - `run_command(...)`: execute the configured `pre_release_check` argv as the first release step and the configured `build_script` argv between the version update and the release-version commit [`src/git_alias/core.py`]
               - `_push_release_refs(...)`: push explicit branch/tag refspecs once with recovery diagnostics [`src/git_alias/core.py`]
                 - External boundary: `git push` transport to `origin` via `run_git_cmd(...)` with inherited stdio so push output and interactive SSH/credential authentication reach the user terminal.
             - `_resume_release_flow(...)`: validate the immutable prepared release and publish only missing refs for the resolved release scope (develop-only integration when develop-scoped) [`src/git_alias/core.py`]
@@ -402,19 +407,20 @@
 - External Boundaries:
   - External graph-viewer binary or Git Bash shell-script launcher.
 
-### PROC:exec-command
+### PROC:release-script
 - Entrypoint(s):
-  - `run_command(...)`: spawn the user-supplied `--exec` argv list with repository root as CWD and inherited stdio [`src/git_alias/core.py`]
+  - `run_command(...)`: spawn the configured release script argv with repository root as CWD and inherited stdio [`src/git_alias/core.py`]
 - Lifecycle/trigger:
-  - Start: `_execute_release_flow(...)` reaches the `run external command` step with a non-empty `--exec` operand tail parsed by `_parse_release_flags(...)`.
-  - Stop: synchronous completion of the injected command; a non-zero exit is converted by `_run_release_step(...)` into a `ReleaseError` that aborts the release before staging, commit, tag, or push.
+  - Start: `_execute_release_flow(...)` resolves a non-empty local `pre_release_check` (executed as the first release step) or a non-empty local `build_script` (executed after the version update and before the release-version commit).
+  - Stop: synchronous completion of the configured script; a non-zero exit is converted by `_run_release_step(...)` into a `ReleaseError` that aborts the release before any commit, tag, or push.
   - Threads: no explicit threads detected.
 - Internal Call-Trace Tree:
-  - `_execute_release_flow(...)`: orchestrate the release pipeline and place the injected `run external command` step between `update versions` and `stage files` [`src/git_alias/core.py`]
-    - `_run_release_step(...)`: wrap the injected execution and convert non-zero exits into `--- [release:<level>] Step ... failed: ... ---` diagnostics [`src/git_alias/core.py`]
+  - `_execute_release_flow(...)`: orchestrate the release pipeline, running the readiness gate first and the build hook between the version update and the release-version commit [`src/git_alias/core.py`]
+    - `_release_script_argv(...)`: resolve the configured script command lines into argv lists without shell evaluation [`src/git_alias/core.py`]
+    - `_run_release_step(...)`: wrap the script execution and convert non-zero exits into `--- [release:<level>] Step ... failed: ... ---` diagnostics [`src/git_alias/core.py`]
       - `run_command(...)`: execute the argv list without shell [`src/git_alias/core.py`]
 - External Boundaries:
-  - External user-supplied executable and inherited process stdio.
+  - External configured release script executables and inherited process stdio.
 
 ## Communication Edges
 - EDGE: PROC:launcher-g-sh -> PROC:uv
@@ -477,9 +483,9 @@
   - Endpoint/Channel: process argv built from the environment-selected `gp_command`/`gp_command_gfx` or `gr_command`/`gr_command_gfx`
   - Payload/Data-Shape: validated launcher argv plus forwarded CLI extras; on Windows shell-script launchers use `[sh|bash, <script_path>, ...]`
   - Evidence: `src/git_alias/core.py`
-- EDGE: PROC:main -> PROC:exec-command
+- EDGE: PROC:main -> PROC:release-script
   - Mechanism: OS subprocess spawn
-  - Endpoint/Channel: process argv built from the `--exec <command> [params...]` operand tail
+  - Endpoint/Channel: process argv built from the local `.galias.conf` `pre_release_check` and `build_script` command lines
   - Payload/Data-Shape: `List[str]` argv executed without shell from the repository root with inherited stdio
   - Evidence: `src/git_alias/core.py`
 

@@ -186,7 +186,8 @@ added separators.
 
 ### Configuration Fields
 
-- Customize repository-local `.galias.conf` with `master`, `develop`, `work`, `default_commit_module`, and `ver_rules`.
+- Customize repository-local `.galias.conf` with `master`, `develop`, `work`, `default_commit_module`, `build_script`, `pre_release_check`, and `ver_rules`.
+- `build_script` (default: empty, step skipped) runs after the version update and before the release-version commit; `pre_release_check` (default: empty, step skipped) runs first and aborts the release on a non-zero exit. Both apply to `major`, `minor`, and `patch`.
 - Each `ver_rules` entry pairs a `pattern` (file selector) with a `regex` (version extractor).
 - **`ver_rules.pattern` uses the `.gitignore` file syntax ([gitignore(5)](https://git-scm.com/docs/gitignore))**. Only tracked repository files (`git ls-files`) are candidates, and hardcoded cache/temporary paths (e.g. `.git`, `tmp`, `temp`, `.cache`, `.pytest_cache`) are always excluded from matching. Semantics:
   - Patterns without `/` match at any depth; patterns containing `/` are anchored to the repository root (a leading `./` is stripped).
