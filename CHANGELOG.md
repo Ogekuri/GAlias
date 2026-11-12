@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.52.1](https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.1) - 2026-11-12
+## [0.52.2](https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.2) - 2026-11-12
 ### ⛰️  Features
 - Update gitalias config.
 - add clean.sh removing all build.sh artifacts [useReq] *(scripts)*
@@ -20,6 +20,10 @@
   no-residual-Bash-message assertions; update WORKFLOW.md call-trace.
 
 ### 🚜  Changes
+- Verify dist/ cleanup of old versions before build [useReq] *(build-script)*
+  Add REQ-327: default build.sh builds verify that no previous release artifact remains after the automatic dist/ cleanup and abort with the surviving artifact list.
+  Implement verify_previous_artifacts_removed and run it between run_cleanup and uv build.
+  Requirements 1.61: add REQ-327 and update the build.sh implementation evidence.
 - Build validation artifacts in a temporary directory [useReq] *(pre-release-check)*
   Add scripts/build.sh --output-dir to build the sdist and wheel into a caller-supplied directory without any dist/ access.
   Run the pre-release validation build into a run-scoped temporary directory and validate the artifacts there.
@@ -1029,7 +1033,7 @@
 - \[0.50.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.50.0
 - \[0.51.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.51.0
 - \[0.52.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.0
-- \[0.52.1\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.1
+- \[0.52.2\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.2
 
 [0.1.0]: https://github.com/Ogekuri/GAlias/releases/tag/v0.1.0
 [0.2.0]: https://github.com/Ogekuri/GAlias/compare/v0.1.0..v0.2.0
@@ -1083,4 +1087,4 @@
 [0.50.0]: https://github.com/Ogekuri/GAlias/compare/v0.49.0..v0.50.0
 [0.51.0]: https://github.com/Ogekuri/GAlias/compare/v0.50.0..v0.51.0
 [0.52.0]: https://github.com/Ogekuri/GAlias/compare/v0.51.0..v0.52.0
-[0.52.1]: https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.1
+[0.52.2]: https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.2
