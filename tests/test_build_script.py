@@ -11,15 +11,17 @@ HDT artifacts (Generator mode):
     repository with a fake `uv` executable)
 - Call graph: `build.sh` -> `check_build_prerequisites`,
   `run_cleanup`, `remove_release_artifacts`, `remove_build_intermediates`,
-  `uv build --out-dir <staging>`, `verify_staged_artifacts`,
-  `install_staged_artifacts`, `print_build_summary`, `on_exit`.
+  `verify_no_release_artifacts`, `uv build --out-dir <staging>`,
+  `verify_staged_artifacts`, `install_staged_artifacts`,
+  `print_build_summary`, `on_exit`.
 - External dependencies to isolate: `uv` replaced by a deterministic fake;
   repository replaced by a temporary git sandbox; `HOME`, `TMPDIR`, and git
   configuration redirected to temporary paths.
 - Test matrix: script contract (REQ-280); happy-path build from a foreign
   working directory (REQ-280, REQ-283, REQ-284, REQ-285, REQ-317);
   pre-build removal of every release-artifact version including tracked
-  artifacts and non-generated preservation (REQ-282, REQ-316); repeated
+  artifacts and non-generated preservation (REQ-282, REQ-316, REQ-324);
+  repeated
   builds (REQ-282); failed `uv build` (REQ-284, REQ-285); missing
   wheel (REQ-283, REQ-284); missing `uv` (REQ-281); `--clean` (REQ-286);
   `--list-artifacts` and unknown options (REQ-287).
@@ -35,7 +37,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from release_scripts_support import REPO_ROOT, create_sandbox
+from release_scripts_support import REPO_ROOT, create_sandbox, write_executable
 
 
 ## @brief Test suite for the release-artifact build Bash script.
@@ -43,7 +45,7 @@ from release_scripts_support import REPO_ROOT, create_sandbox
 #          pre-build cleanup of every artifact version, post-build residue
 #          removal, failure cleanup, and the auxiliary option modes inside
 #          hermetic sandbox repositories.
-# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285, REQ-286, REQ-287, REQ-288, REQ-316, REQ-317
+# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285, REQ-286, REQ-287, REQ-288, REQ-316, REQ-317, REQ-324
 class BuildScriptTest(unittest.TestCase):
     ## @brief Absolute path of the real build script under test.
     SCRIPT_PATH = REPO_ROOT / "scripts" / "build.sh"
@@ -198,9 +200,11 @@ class BuildScriptTest(unittest.TestCase):
 
     ## @brief Verify stale artifacts of every version are replaced.
     # @details Untracked and git-tracked release artifacts of any version are
-    #          removed before building; a non-generated file remains untouched.
+    #          removed before building and the bootstrap verification runs
+    #          between the cleanup and the build; a non-generated file remains
+    #          untouched.
     # @return None.
-    # @satisfies REQ-282, REQ-317
+    # @satisfies REQ-282, REQ-317, REQ-324
     def test_build_removes_stale_artifacts_of_any_version(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             # Arrange
@@ -219,6 +223,42 @@ class BuildScriptTest(unittest.TestCase):
             self.assertEqual(sorted(entry.name for entry in dist.iterdir()), expected_entries)
             self.assertFalse((dist / "galias-9.9.9-py3-none-any.whl").exists())
             self.assertEqual((dist / "NOTES.md").read_text(encoding="utf-8"), "notes")
+            progress = [line for line in completed.stdout.splitlines() if line.startswith("--- [build] ")]
+            self.assertLess(
+                progress.index("--- [build] Clean previous build outputs ---"),
+                progress.index("--- [build] Verify previous build outputs were removed ---"),
+            )
+            self.assertLess(
+                progress.index("--- [build] Verify previous build outputs were removed ---"),
+                progress.index("--- [build] Build sdist and wheel ---"),
+            )
+
+    ## @brief Verify a surviving release artifact aborts the bootstrap build.
+    # @details A no-op `rm` shim makes the cleanup report success while the
+    #          stale artifact remains, so the bootstrap verification reports
+    #          the survivor and aborts before `uv build` is invoked.
+    # @return None.
+    # @satisfies REQ-324
+    def test_build_aborts_when_cleanup_leaves_a_release_artifact(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            # Arrange
+            sandbox = create_sandbox(Path(tmp_dir))
+            dist = sandbox.repo / "dist"
+            dist.mkdir()
+            stale = dist / "galias-0.0.1.tar.gz"
+            stale.write_text("stale", encoding="utf-8")
+            noop_bin = Path(tmp_dir) / "noop-bin"
+            noop_bin.mkdir()
+            write_executable(noop_bin / "rm", "#!/bin/sh\nexit 0\n")
+            env = dict(sandbox.env, PATH=f"{noop_bin.as_posix()}:{sandbox.env['PATH']}")
+            # Act
+            completed = sandbox.run("build.sh", env=env)
+            # Assert
+            self.assertNotEqual(completed.returncode, 0)
+            self.assertIn("Release artifact survived the bootstrap cleanup", completed.stderr)
+            self.assertIn("Previous release artifacts were not removed", completed.stderr)
+            self.assertNotIn("Build completed", completed.stdout)
+            self.assertEqual(sandbox.uv_invocations(), [])
 
     ## @brief Verify consecutive builds never accumulate artifacts.
     # @return None.

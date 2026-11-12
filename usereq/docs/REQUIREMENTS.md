@@ -17,13 +17,14 @@ tags: ["requirements", "srs", "galias"]
 ---
 
 # GAlias CLI Requirements
-**Version**: 1.59
+**Version**: 1.60
 **Author**: Francesco Rolando
 **Date**: 2026-11-12
 
 ## Revision History
 | Date | Version | Change Summary |
 |------|---------|----------------|
+| 2026-11-12 | 1.60 | Replaced the pre-release pre-existing artifact abort with automatic removal through the `scripts/build.sh --clean` cleanup followed by an effective-removal verification (REQ-290, REQ-323), added the same removal verification to the `scripts/build.sh` bootstrap (REQ-324), and scoped the tracked-file preservation rule to allow that artifact removal (REQ-223). |
 | 2026-11-12 | 1.59 | Replaced the `--exec` release option with the local `build_script` configuration key executed between version update and release-version commit (DES-006, REQ-026, REQ-166, REQ-167, REQ-168) and added the local `pre_release_check` configuration key executed as the first release step with fail-fast abort semantics (REQ-318, REQ-319, REQ-320, REQ-321). |
 | 2026-11-12 | 1.58 | Removed the requirement that `dist/` hold git-tracked build artifacts (REQ-314) and reworded the attestation, GitHub Release, and PyPI publication contracts to consume available `dist/` artifacts without mandating their repository presence (REQ-113, REQ-114, REQ-194, REQ-228, REQ-313, REQ-315); release artifacts may be committed but are non-mandatory. |
 | 2026-11-12 | 1.57 | Removed the build-preparatory `test-release` job (lock synchronization and pytest) from `release-pypi.yml` and gated `publish-release` only on the branch-containment job (REQ-228, REQ-229, REQ-213): the automation consumes and publishes the pre-built `dist/` artifacts of the tagged release commit and never executes `scripts/build.sh` or `scripts/pre-release-check.sh` (REQ-313). |
@@ -354,7 +355,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-220**: MUST verify `uv.lock` synchronization with `pyproject.toml` via `uv lock --check` before test execution.
 - **REQ-221**: MUST execute the complete pytest suite through `uv run pytest` and abort with non-zero exit when the suite fails.
 - **REQ-222**: MUST generate release artifacts during pre-release validation exclusively by executing `scripts/build.sh`, aborting when that script exits non-zero.
-- **REQ-223**: MUST NOT modify tracked repository files at any validation step.
+- **REQ-223**: MUST NOT modify tracked repository files at any validation step, except the git-tracked release artifacts removed by the REQ-290 pre-existing artifact cleanup.
 - **REQ-226**: MUST remove at exit every generated artifact (`dist/` release artifacts, `build/`, `src/*.egg-info`), `.pytest_cache`, `src/`/`tests/` `__pycache__` directories, and its temporary directory.
 - **REQ-227**: MUST preserve a pre-existing uv-managed `.venv` environment and remove at exit a `.venv` created during the run.
 - **REQ-228**: MUST execute `release-pypi.yml` without any build-preparatory validation job, consuming the `dist/` artifacts when present.
@@ -415,7 +416,9 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-287**: MUST implement `scripts/build.sh --list-artifacts` printing one existing `dist/` release artifact path per line, and reject unknown options with usage text and non-zero exit.
 - **REQ-288**: MUST make `scripts/build.sh` and `scripts/pre-release-check.sh` refuse to delete `build/` or `src/*.egg-info` targets containing git-tracked files and report the refusal as an error.
 - **REQ-289**: MUST validate before other pre-release checks that the repository root is a git work tree containing `pyproject.toml`, `uv.lock`, `README.md`, `LICENSE`, `src/git_alias/__init__.py`, `tests/`, and executable `scripts/build.sh`.
-- **REQ-290**: MUST abort pre-release validation before any build or removal when `scripts/build.sh --list-artifacts` reports pre-existing release artifacts, printing each path and the `scripts/build.sh --clean` remedy.
+- **REQ-290**: MUST remove every pre-existing `dist/` release artifact, whatever its version and git tracking status, by executing the `scripts/build.sh --clean` cleanup before the REQ-298 baseline capture.
+- **REQ-323**: MUST verify after the REQ-290 removal, through `scripts/build.sh --list-artifacts`, that no release artifact remains, and MUST abort validation reporting every surviving path.
+- **REQ-324**: MUST verify through the REQ-287 artifact listing that no release artifact remains after the REQ-317 bootstrap cleanup, and MUST abort the build when any artifact survives.
 - **REQ-291**: MUST verify Bash syntax of every `scripts/*.sh` file via `bash -n` during pre-release validation.
 - **REQ-292**: MUST verify via `uv run python` that every Python file under `src/` and `tests/` compiles and that `pyproject.toml` parses as TOML.
 - **REQ-293**: MUST verify version consistency across version-managed files by executing the `ver` alias with update checks disabled before test execution.
@@ -467,8 +470,8 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - `core.py` implements dispatch, command handlers, config loading/writing, git subprocess wrappers, and release/changelog flows.
 - `forest.py` implements vine-based text tree rendering for git history (`l` alias).
 - `release-pypi.yml` implements manual-or-tag-triggered publication of the available pre-built `dist/` artifacts, GitHub Release publication, and PyPI OIDC Trusted Publishing without executing any distribution build (REQ-113, REQ-313); tag commits contained in `origin/master` or `origin/develop` run the release workflow, and only master-contained tag commits publish to PyPI (REQ-205, REQ-206). Release automation executes on the GitHub Actions Node24 runner generation without Node20 opt-out overrides (REQ-211, REQ-212, REQ-213). `publish-release` is gated only on the `check-branch` job and runs no build-preparatory validation (REQ-228, REQ-229); the workflow never executes `scripts/build.sh` or `scripts/pre-release-check.sh` (REQ-313). Artifact presence and name/version agreement are verified before attestation and publication when artifacts are available, and PyPI receives the unchanged distributions (REQ-194, REQ-315).
-- `scripts/build.sh` implements the release-artifact build flow: prerequisite checks, automatic cleanup of every previous `dist/` release artifact of any version plus `build/` and `src/*.egg-info` (REQ-282, REQ-316, REQ-317), staged `uv build`, artifact verification, installation into `dist/`, post-build intermediate removal (REQ-284), and the `--clean`/`--list-artifacts` modes (REQ-280..REQ-288).
-- `scripts/pre-release-check.sh` implements the repository-local release-readiness flow: toolchain and structure checks, syntax checks, lockfile synchronization, version consistency, full pytest execution, `scripts/build.sh` invocation, artifact validation, and signal-safe cleanup with repository-integrity verification (REQ-217..REQ-227, REQ-288..REQ-300).
+- `scripts/build.sh` implements the release-artifact build flow: prerequisite checks, automatic cleanup of every previous `dist/` release artifact of any version plus `build/` and `src/*.egg-info` (REQ-282, REQ-316, REQ-317) with bootstrap verification of the effective removal (REQ-324), staged `uv build`, artifact verification, installation into `dist/`, post-build intermediate removal (REQ-284), and the `--clean`/`--list-artifacts` modes (REQ-280..REQ-288).
+- `scripts/pre-release-check.sh` implements the repository-local release-readiness flow: toolchain and structure checks, syntax checks, pre-existing release-artifact removal through `scripts/build.sh --clean` and its effective-removal verification (REQ-290, REQ-323), lockfile synchronization, version consistency, full pytest execution, `scripts/build.sh` invocation, artifact validation, and signal-safe cleanup with repository-integrity verification (REQ-217..REQ-227, REQ-288..REQ-300, REQ-323).
 - `.gitignore` implements the exclude-all-then-re-include strategy, re-includes root `dist/` release artifacts as versionable files, and excludes nested `dist` directories (REQ-301..REQ-303).
 - No explicit performance optimizations identified.
 
@@ -543,7 +546,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-220** evidence: `scripts/pre-release-check.sh` `uv lock --check` step ordered before the pytest step.
 - **REQ-221** evidence: `scripts/pre-release-check.sh` `uv run pytest` step executing the complete unit-test suite.
 - **REQ-222** evidence: `scripts/pre-release-check.sh` `Build release artifacts` step executing `scripts/build.sh`.
-- **REQ-223** evidence: `scripts/pre-release-check.sh` validation commands preserving tracked repository content and the EXIT trap removing only script-created artifact paths.
+- **REQ-223** evidence: `scripts/pre-release-check.sh` validation commands preserving tracked repository content, the EXIT trap removing only script-created artifact paths, and the sole tracked-file exception being the REQ-290 removal executed before `record_baseline` captures the REQ-298 baseline.
 - **REQ-226** evidence: `scripts/pre-release-check.sh` `cleanup_generated_artifacts` invoked by the `on_exit` trap, delegating build outputs to `scripts/build.sh --clean` and removing `.pytest_cache` plus `src/`/`tests/` `__pycache__` directories.
 - **REQ-227** evidence: `scripts/pre-release-check.sh` `record_baseline` `VENV_PREEXISTED` flag gating `.venv` removal in `cleanup_generated_artifacts`.
 - **REQ-280** evidence: `scripts/build.sh` executable script with `REPO_ROOT` resolution from `BASH_SOURCE` and `run_build` installing artifacts into `dist/`.
@@ -556,7 +559,9 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-287** evidence: `scripts/build.sh` `list_release_artifacts` printing every existing `dist/` release artifact and the unknown-option branch printing `print_usage` with exit status 2.
 - **REQ-288** evidence: `has_tracked_content` guard inside `remove_generated_path` in `scripts/build.sh` and `scripts/pre-release-check.sh`.
 - **REQ-289** evidence: `scripts/pre-release-check.sh` `validate_repository_structure`.
-- **REQ-290** evidence: `scripts/pre-release-check.sh` `check_preexisting_artifacts` failing on non-empty `scripts/build.sh --list-artifacts` output before `record_baseline` sets `BASELINE_READY`, the flag gating every cleanup removal.
+- **REQ-290** evidence: `scripts/pre-release-check.sh` `remove_preexisting_artifacts` step executing `scripts/build.sh --clean` before `record_baseline` sets `BASELINE_READY`, the flag gating every cleanup removal.
+- **REQ-323** evidence: `scripts/pre-release-check.sh` `check_preexisting_artifacts` step failing when `scripts/build.sh --list-artifacts` still reports an artifact after the REQ-290 removal and printing every surviving path.
+- **REQ-324** evidence: `scripts/build.sh` `verify_no_release_artifacts` invoked by `run_build` immediately after the `run_cleanup` bootstrap step and before `uv build`.
 - **REQ-291** evidence: `scripts/pre-release-check.sh` `check_shell_syntax`.
 - **REQ-292** evidence: `scripts/pre-release-check.sh` `check_python_sources`.
 - **REQ-293** evidence: `scripts/pre-release-check.sh` `check_version_consistency` calling `main(["ver"], check_updates=False)` before the pytest step.

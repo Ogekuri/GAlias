@@ -6,7 +6,9 @@
 #          output (REQ-317) removing all `dist/` release artifacts of any
 #          version regardless of git tracking status plus an emptied `dist/`
 #          directory (REQ-282) and the `build/`/`src/*.egg-info` intermediates
-#          through the tracked-content guard (REQ-288, REQ-316), then `uv
+#          through the tracked-content guard (REQ-288, REQ-316), bootstrap
+#          verification that no release artifact survived that cleanup
+#          (REQ-324), then `uv
 #          build` into a temporary staging directory, staged artifact
 #          verification, and installation of exactly one sdist and one wheel
 #          into `dist/` (REQ-283), followed by a summary (REQ-285).
@@ -20,7 +22,7 @@
 #          The repository root derives from the script location, so invocation
 #          works from any working directory (REQ-280).
 #          Complexity: O(N) over `dist/` entries plus the delegated build.
-# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285, REQ-286, REQ-287, REQ-288, REQ-307, REQ-316, REQ-317
+# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285, REQ-286, REQ-287, REQ-288, REQ-307, REQ-316, REQ-317, REQ-324
 
 set -Eeuo pipefail
 
@@ -247,6 +249,26 @@ run_cleanup() {
   return "$failed"
 }
 
+## @brief Verify no release artifact survives the bootstrap cleanup.
+# @details O(N) over `dist/` entries; re-collects every release artifact of
+#          every version through `collect_release_artifacts` and aborts the
+#          build after reporting each survivor, so the REQ-317 bootstrap
+#          cleanup provably removed every previous artifact before `uv build`
+#          starts (REQ-324).
+# @return None; never returns when a release artifact remains.
+# @satisfies REQ-324
+verify_no_release_artifacts() {
+  local artifact
+  collect_release_artifacts
+  if [ "${#RELEASE_ARTIFACTS[@]}" -eq 0 ]; then
+    return 0
+  fi
+  for artifact in "${RELEASE_ARTIFACTS[@]}"; do
+    log_error "Release artifact survived the bootstrap cleanup: $artifact"
+  done
+  fail "Previous release artifacts were not removed"
+}
+
 ## @brief Implement `--clean`: remove generated outputs without building.
 # @details O(size of outputs); executes the inline cleanup flow with the
 #          canonical build progress lines and no separate cleanup script
@@ -467,13 +489,14 @@ on_exit() {
 ## @brief Execute the complete release-artifact build.
 # @details Registers the exit and signal traps, validates prerequisites,
 #          runs the REQ-282/REQ-316/REQ-288 cleanup of every previous build,
-#          runs `uv build` into the staging directory, verifies and installs
+#          verifies that no release artifact survived it (REQ-324), runs
+#          `uv build` into the staging directory, verifies and installs
 #          the artifacts, and prints the summary. Every step aborts the
 #          script on failure (REQ-285); the exit trap removes every
 #          intermediate so only the produced artifacts remain (REQ-284,
 #          REQ-317).
 # @return None; exits non-zero on the first failing step.
-# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285, REQ-316, REQ-317
+# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285, REQ-316, REQ-317, REQ-324
 run_build() {
   trap on_exit EXIT
   trap 'exit 130' INT
@@ -486,6 +509,9 @@ run_build() {
   log_step "Clean previous build outputs"
   BUILD_STARTED=1
   run_cleanup || fail "Unable to clean previous build outputs"
+
+  log_step "Verify previous build outputs were removed"
+  verify_no_release_artifacts
 
   log_step "Build sdist and wheel"
   STAGING_DIR="$(mktemp -d "${TMPDIR:-/tmp}/galias-build.XXXXXX")" \
