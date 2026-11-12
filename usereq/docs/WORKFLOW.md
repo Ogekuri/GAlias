@@ -20,7 +20,7 @@
 - ID: PROC:pre-release-check
   - Type: Process
   - Parent Process: null
-  - Role: Bash release-readiness script orchestrating toolchain, structure, syntax, pre-existing release-artifact removal with removal verification, dependency-sync, version-consistency, full-test-suite, release-build, and artifact-validation checks with signal-safe cleanup and repository-integrity verification
+  - Role: Bash release-readiness script orchestrating toolchain, structure, syntax, dependency-sync, version-consistency, full-test-suite, release-build, and artifact-validation checks with signal-safe cleanup and repository-integrity verification
   - Entrypoint Symbols:
     - `scripts/pre-release-check.sh::<module_body>`
   - Defining Files:
@@ -28,7 +28,7 @@
 - ID: PROC:build-sh
   - Type: Process
   - Parent Process: null
-  - Role: Bash release-artifact build script producing one sdist and one wheel in `dist/` through a staged `uv build`, cleaning every previous build output before building and verifying that no release artifact survived that bootstrap cleanup, with `--clean` and `--list-artifacts` modes
+  - Role: Bash release-artifact build script producing one sdist and one wheel in `dist/` through a staged `uv build`, cleaning every previous build output before building, with `--clean` and `--list-artifacts` modes
   - Entrypoint Symbols:
     - `scripts/build.sh::<module_body>`
   - Defining Files:
@@ -246,8 +246,7 @@
       - External boundary: `git --version` and `uv --version` prerequisite probes executed by `check_tool_version(...)`.
       - `scripts/pre-release-check.sh::validate_repository_structure(...)`: require the git work-tree root, packaging manifests, package entry module, `tests/`, and executable `scripts/build.sh` [`scripts/pre-release-check.sh`]
       - `scripts/pre-release-check.sh::check_shell_syntax(...)`: run `bash -n` on every `scripts/*.sh` file [`scripts/pre-release-check.sh`]
-      - `scripts/pre-release-check.sh::remove_preexisting_artifacts(...)`: delete every pre-existing `dist/` release artifact of any version through the shared `scripts/build.sh --clean` cleanup implementation before the baseline capture [`scripts/pre-release-check.sh`]
-      - `scripts/pre-release-check.sh::check_preexisting_artifacts(...)`: verify through `scripts/build.sh --list-artifacts` that no release artifact survived the removal, reporting every survivor and failing the run [`scripts/pre-release-check.sh`]
+      - `scripts/pre-release-check.sh::check_preexisting_artifacts(...)`: abort when `scripts/build.sh --list-artifacts` reports pre-existing release artifacts [`scripts/pre-release-check.sh`]
       - `scripts/pre-release-check.sh::record_baseline(...)`: record `.venv` and `dist/` pre-existence and store the repository-state snapshots enabling cleanup [`scripts/pre-release-check.sh`]
         - `scripts/pre-release-check.sh::snapshot_tracked_state(...)`: fingerprint tracked-file status and unstaged diff content [`scripts/pre-release-check.sh`]
         - `scripts/pre-release-check.sh::snapshot_untracked_files(...)`: inventory untracked and ignored files outside `.venv` [`scripts/pre-release-check.sh`]
@@ -290,7 +289,6 @@
           - `scripts/build.sh::remove_generated_path(...)`: remove one generated intermediate unless it holds git-tracked content [`scripts/build.sh`]
             - `scripts/build.sh::has_tracked_content(...)`: query `git ls-files` for tracked content below a path [`scripts/build.sh`]
         - `scripts/build.sh::remove_empty_dist_dir(...)`: remove an emptied `dist/` directory [`scripts/build.sh`]
-      - `scripts/build.sh::verify_no_release_artifacts(...)`: re-collect every `dist/` release artifact of every version and abort the build when a survivor remains after the bootstrap cleanup [`scripts/build.sh`]
       - External boundary: `uv build --out-dir <temporary staging directory>` sdist and wheel build.
       - `scripts/build.sh::verify_staged_artifacts(...)`: require exactly one non-empty sdist and one non-empty wheel in the staging directory [`scripts/build.sh`]
         - `scripts/build.sh::verify_sdist_content(...)`: list the staged sdist members with `tar -tzf` and require the metadata, license, readme, lock file, and package entry module while rejecting `tests/`, `scripts/`, `usereq/`, `MANIFEST.in`, and generated egg-info files other than `SOURCES.txt` [`scripts/build.sh`]
@@ -453,7 +451,7 @@
 - EDGE: PROC:pre-release-check -> PROC:build-sh
   - Mechanism: OS subprocess spawn
   - Endpoint/Channel: process argv, exit status, and stdout capture
-  - Payload/Data-Shape: `scripts/build.sh --clean` (pre-baseline pre-existing release-artifact removal), `scripts/build.sh --clean` (generated-output removal), and `scripts/build.sh --list-artifacts` (effective-removal verification with newline-separated absolute artifact paths)
+  - Payload/Data-Shape: `scripts/build.sh` (build), `scripts/build.sh --clean` (generated-output removal), and `scripts/build.sh --list-artifacts` (newline-separated absolute artifact paths)
   - Evidence: `scripts/pre-release-check.sh`, `scripts/build.sh`
 - EDGE: PROC:build-sh -> PROC:uv
   - Mechanism: OS subprocess spawn

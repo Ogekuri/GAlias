@@ -15,7 +15,6 @@ HDT artifacts (Refactorer mode):
     verification (Level 2, subprocess composing `scripts/build.sh`)
 - Call graph: `pre-release-check.sh` -> `git --version`, `uv --version`,
   `validate_repository_structure`, `check_shell_syntax`,
-  `remove_preexisting_artifacts` -> `build.sh --clean`,
   `check_preexisting_artifacts` -> `build.sh --list-artifacts`,
   `record_baseline`, `uv lock --check`, `uv run python` checks,
   `uv run pytest`, `build.sh`, artifact validation steps, `on_exit` ->
@@ -30,9 +29,7 @@ HDT artifacts (Refactorer mode):
   REQ-220, REQ-221, REQ-222, REQ-224, REQ-226, REQ-227, REQ-300);
   preservation of pre-existing content (REQ-223, REQ-227, REQ-298);
   fail-fast on the first failing step (REQ-219, REQ-225); missing `git`
-  and missing `uv` (REQ-219); pre-existing artifact removal through
-  `build.sh --clean` and its effective-removal verification (REQ-290,
-  REQ-323);
+  and missing `uv` (REQ-219); pre-existing artifact guard (REQ-290);
   failing tests, failing build, and missing artifact with cleanup
   (REQ-225, REQ-226, REQ-299); leftover file, modified tracked file, and
   tracked cleanup target (REQ-288, REQ-298, REQ-299); signal interruption
@@ -59,7 +56,7 @@ from release_scripts_support import REPO_ROOT, create_sandbox, write_executable
 #          root resolution, fail-fast semantics, guaranteed cleanup,
 #          repository-integrity verification, and signal handling inside
 #          hermetic sandbox repositories.
-# @satisfies REQ-217, REQ-218, REQ-219, REQ-220, REQ-221, REQ-222, REQ-223, REQ-224, REQ-225, REQ-226, REQ-227, REQ-288, REQ-290, REQ-297, REQ-298, REQ-299, REQ-300, REQ-323
+# @satisfies REQ-217, REQ-218, REQ-219, REQ-220, REQ-221, REQ-222, REQ-223, REQ-224, REQ-225, REQ-226, REQ-227, REQ-288, REQ-290, REQ-297, REQ-298, REQ-299, REQ-300
 class PreReleaseCheckScriptTest(unittest.TestCase):
     ## @brief Absolute path of the real pre-release-check script under test.
     SCRIPT_PATH = REPO_ROOT / "scripts" / "pre-release-check.sh"
@@ -212,90 +209,18 @@ class PreReleaseCheckScriptTest(unittest.TestCase):
             self.assertNotIn("command not found", completed.stderr)
             self.assertEqual(sandbox.uv_invocations(), [])
 
-    ## @brief Verify pre-existing release artifacts are removed before the baseline.
-    # @details Untracked and git-tracked release artifacts of any version are
-    #          removed through `build.sh --clean` before the baseline, the
-    #          removal is verified through `build.sh --list-artifacts`, the
-    #          non-generated `dist/` file survives, and the run passes.
+    ## @brief Verify pre-existing release artifacts abort the run untouched.
+    # @details The guard fails before the baseline, the lock check, and any
+    #          removal, and reports the `scripts/build.sh --clean` remedy.
     # @return None.
-    # @satisfies REQ-290, REQ-323
-    def test_script_removes_preexisting_release_artifacts(self):
+    # @satisfies REQ-290
+    def test_script_aborts_when_release_artifacts_preexist(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             # Arrange
             sandbox = create_sandbox(Path(tmp_dir))
-            dist = sandbox.repo / "dist"
-            dist.mkdir()
-            stale_sdist = dist / "galias-0.0.1.tar.gz"
-            stale_wheel = dist / "galias-0.0.2-py3-none-any.whl"
-            stale_sdist.write_text("stale", encoding="utf-8")
-            stale_wheel.write_text("tracked", encoding="utf-8")
-            notes = dist / "NOTES.md"
-            notes.write_text("notes", encoding="utf-8")
-            sandbox.git("add", "--force", "dist/galias-0.0.2-py3-none-any.whl")
-            sandbox.git("commit", "-q", "-m", "track stale wheel")
-            expected_dist_entries = ["NOTES.md"]
-            # Act
-            completed = sandbox.run(self.SCRIPT_NAME)
-            # Assert
-            self.assertEqual(completed.returncode, 0, msg=completed.stderr)
-            self.assertIn("--- [pre-release-check] Remove pre-existing release artifacts ---", completed.stdout)
-            self.assertIn("--- [pre-release-check] Check for pre-existing release artifacts ---", completed.stdout)
-            self.assertIn("--- [pre-release-check] Result: PASSED ---", completed.stdout)
-            self.assertFalse(stale_sdist.exists())
-            self.assertFalse(stale_wheel.exists())
-            self.assertEqual(sorted(entry.name for entry in dist.iterdir()), expected_dist_entries)
-            self.assertEqual(notes.read_text(encoding="utf-8"), "notes")
-            self.assertEqual(sandbox.temp_entries(), [])
-
-    ## @brief Verify a failing artifact removal aborts the run.
-    # @details The sandbox build script fails on `--clean`, so the removal
-    #          step reports the failure before the baseline and no `uv` step
-    #          beyond the version probe executes.
-    # @return None.
-    # @satisfies REQ-225, REQ-290
-    def test_script_aborts_when_artifact_removal_fails(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            # Arrange
-            sandbox = create_sandbox(Path(tmp_dir))
-            write_executable(sandbox.script("build.sh"), "#!/bin/sh\nexit 1\n")
-            expected_invocations = [["--version"]]
-            # Act
-            completed = sandbox.run(self.SCRIPT_NAME)
-            # Assert
-            self.assertEqual(completed.returncode, 1)
-            self.assertIn(
-                "--- [pre-release-check] Step failed: Remove pre-existing release artifacts ---",
-                completed.stderr,
-            )
-            self.assertIn(
-                "--- [pre-release-check] Result: FAILED (Remove pre-existing release artifacts) ---",
-                completed.stderr,
-            )
-            self.assertEqual(sandbox.uv_invocations(), expected_invocations)
-
-    ## @brief Verify surviving artifacts fail the effective-removal check.
-    # @details The sandbox build script succeeds on `--clean` but still lists
-    #          a release artifact, so the verification step reports every
-    #          surviving path and aborts before the baseline.
-    # @return None.
-    # @satisfies REQ-225, REQ-323
-    def test_script_aborts_when_artifacts_survive_removal(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            # Arrange
-            sandbox = create_sandbox(Path(tmp_dir))
-            stub = "\n".join(
-                (
-                    "#!/bin/sh",
-                    'case "${1:-}" in',
-                    "  --list-artifacts)",
-                    "    printf '%s\\n' 'dist/galias-0.0.1.tar.gz'",
-                    "    ;;",
-                    "esac",
-                    "exit 0",
-                    "",
-                )
-            )
-            write_executable(sandbox.script("build.sh"), stub)
+            existing = sandbox.repo / "dist" / "galias-0.0.1.tar.gz"
+            existing.parent.mkdir()
+            existing.write_text("previous build", encoding="utf-8")
             expected_invocations = [["--version"]]
             # Act
             completed = sandbox.run(self.SCRIPT_NAME)
@@ -305,8 +230,9 @@ class PreReleaseCheckScriptTest(unittest.TestCase):
                 "--- [pre-release-check] Step failed: Check for pre-existing release artifacts ---",
                 completed.stderr,
             )
-            self.assertIn("Pre-existing release artifacts remain after removal", completed.stderr)
-            self.assertIn("dist/galias-0.0.1.tar.gz", completed.stderr)
+            self.assertIn(str(existing), completed.stderr)
+            self.assertIn("scripts/build.sh --clean", completed.stderr)
+            self.assertEqual(existing.read_text(encoding="utf-8"), "previous build")
             self.assertEqual(sandbox.uv_invocations(), expected_invocations)
 
     ## @brief Verify the full step sequence, output, and zero residue.
@@ -330,7 +256,6 @@ class PreReleaseCheckScriptTest(unittest.TestCase):
                 "Check uv availability",
                 "Validate repository structure",
                 "Check shell script syntax",
-                "Remove pre-existing release artifacts",
                 "Check for pre-existing release artifacts",
                 "Record repository state",
                 "Check dependency lock synchronization",

@@ -3,10 +3,8 @@
 # @brief Repository-local release-readiness check with guaranteed cleanup.
 # @details Executes, in strict fail-fast order (REQ-225): `git` and Astral
 #          `uv` availability (REQ-219), repository structure validation
-#          (REQ-289), Bash syntax of `scripts/*.sh` (REQ-291), removal of
-#          every pre-existing `dist/` release artifact through
-#          `scripts/build.sh --clean` (REQ-290) followed by verification that
-#          no artifact survived it (REQ-323), repository-state
+#          (REQ-289), Bash syntax of `scripts/*.sh` (REQ-291), the
+#          pre-existing release-artifact guard (REQ-290), repository-state
 #          baseline capture, `uv lock --check` (REQ-220), Python source and
 #          `pyproject.toml` validity (REQ-292), version consistency through
 #          the `ver` alias (REQ-293), the complete pytest suite (REQ-221),
@@ -22,7 +20,7 @@
 #          root derives from the script location (REQ-218). Project scope
 #          note: the project configures no formatter, linter, type checker,
 #          or dependency-audit tool, so no such step exists.
-# @satisfies REQ-217, REQ-218, REQ-219, REQ-220, REQ-221, REQ-222, REQ-223, REQ-224, REQ-225, REQ-226, REQ-227, REQ-288, REQ-289, REQ-290, REQ-291, REQ-292, REQ-293, REQ-294, REQ-295, REQ-296, REQ-297, REQ-298, REQ-299, REQ-300, REQ-308, REQ-323
+# @satisfies REQ-217, REQ-218, REQ-219, REQ-220, REQ-221, REQ-222, REQ-223, REQ-224, REQ-225, REQ-226, REQ-227, REQ-288, REQ-289, REQ-290, REQ-291, REQ-292, REQ-293, REQ-294, REQ-295, REQ-296, REQ-297, REQ-298, REQ-299, REQ-300, REQ-308
 
 set -Eeuo pipefail
 
@@ -45,9 +43,7 @@ WORK_DIR=""
 CURRENT_STEP="initialization"
 ## @brief Description of the failed step or interruption; empty while every step passes.
 FAILED_STEP=""
-## @brief Flag set to 1 once the baseline exists; gates every cleanup removal.
-# @details Set only by `record_baseline`, which runs after the REQ-290
-#          removal, so cleanup removal never applies to an unrecorded state.
+## @brief Flag set to 1 once the baseline exists; gates every cleanup removal (REQ-290).
 BASELINE_READY=0
 ## @brief Flag set to 1 when `.venv` existed before the run (REQ-227).
 VENV_PREEXISTED=0
@@ -174,31 +170,13 @@ check_shell_syntax() {
   return 0
 }
 
-## @brief Remove every pre-existing release artifact before the validation steps.
-# @details O(size of generated outputs); delegates the deletion of every
-#          `dist/` release artifact of any version and git tracking status
-#          plus the `build/`/`src/*.egg-info` intermediates to the shared
-#          `scripts/build.sh --clean` cleanup implementation, so the
-#          pre-release run never starts on top of previous release outputs
-#          (REQ-290). Execution precedes `record_baseline`, therefore the
-#          REQ-298 baseline never contains a removed artifact.
-# @return {int} 0 when the cleanup implementation succeeds; 1 otherwise.
+## @brief Abort when generated release artifacts already exist in `dist/`.
+# @details O(N); queries `scripts/build.sh --list-artifacts`. Pre-existing
+#          artifacts would be deleted by the build and by cleanup, so the
+#          check fails before any build or removal and reports each path
+#          plus the remedy (REQ-290).
+# @return {int} 0 when no generated artifact pre-exists; 1 otherwise.
 # @satisfies REQ-290
-remove_preexisting_artifacts() {
-  if ! "$BUILD_SCRIPT" --clean; then
-    log_detail "Unable to remove pre-existing release artifacts through '$BUILD_SCRIPT --clean'"
-    return 1
-  fi
-  return 0
-}
-
-## @brief Verify that the pre-existing artifact removal actually happened.
-# @details O(N); queries `scripts/build.sh --list-artifacts` after the
-#          REQ-290 removal and fails when any release artifact still exists,
-#          printing every surviving path so an ineffective cleanup can never
-#          be mistaken for a clean repository (REQ-323).
-# @return {int} 0 when no release artifact remains; 1 otherwise.
-# @satisfies REQ-323
 check_preexisting_artifacts() {
   local existing
   if ! existing="$("$BUILD_SCRIPT" --list-artifacts)"; then
@@ -206,8 +184,9 @@ check_preexisting_artifacts() {
     return 1
   fi
   if [ -n "$existing" ]; then
-    log_detail "Pre-existing release artifacts remain after removal:"
+    log_detail "Pre-existing release artifacts would be removed by this check:"
     printf '%s\n' "$existing" >&2
+    log_detail "Move them elsewhere or remove them with: scripts/build.sh --clean"
     return 1
   fi
   return 0
@@ -736,7 +715,6 @@ run_step "Check git availability" check_tool_version git
 run_step "Check uv availability" check_tool_version uv
 run_step "Validate repository structure" validate_repository_structure
 run_step "Check shell script syntax" check_shell_syntax
-run_step "Remove pre-existing release artifacts" remove_preexisting_artifacts
 run_step "Check for pre-existing release artifacts" check_preexisting_artifacts
 run_step "Record repository state" record_baseline
 run_step "Check dependency lock synchronization" uv lock --check
