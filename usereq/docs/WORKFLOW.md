@@ -28,7 +28,7 @@
 - ID: PROC:build-sh
   - Type: Process
   - Parent Process: null
-  - Role: Bash release-artifact build script producing one sdist and one wheel into `dist/` or into a requested `--output-dir` directory through a staged `uv build`, cleaning every previous build output before a default build, with `--clean`, `--list-artifacts`, and `--output-dir` modes
+  - Role: Bash release-artifact build script producing one sdist and one wheel into `dist/` or into a requested `--output-dir` directory through a staged `uv build`, cleaning every previous build output before a default build and verifying that no previous release artifact survives that cleanup, with `--clean`, `--list-artifacts`, and `--output-dir` modes
   - Entrypoint Symbols:
     - `scripts/build.sh::<module_body>`
   - Defining Files:
@@ -277,7 +277,7 @@
   - Threads: no explicit threads detected.
 - Internal Call-Trace Tree:
   - `scripts/build.sh::<module_body>(...)`: resolve repository root from the script location, detect the git work tree, and dispatch the selected mode [`scripts/build.sh`]
-    - `scripts/build.sh::run_build(...)`: register exit and signal traps, then run the default cleanup of every previous build output or, in the `--output-dir` mode, clean only the build intermediates and create the requested directory without touching `dist/`, and execute the fail-fast build steps [`scripts/build.sh`]
+    - `scripts/build.sh::run_build(...)`: register exit and signal traps, then run the default cleanup of every previous build output followed by the verification that no previous release artifact remains or, in the `--output-dir` mode, clean only the build intermediates and create the requested directory without touching `dist/`, and execute the fail-fast build steps [`scripts/build.sh`]
       - `scripts/build.sh::check_build_prerequisites(...)`: require `uv`, `pyproject.toml`, and `src/git_alias/` [`scripts/build.sh`]
       - `scripts/build.sh::run_cleanup(...)`: execute the automatic pre-build cleanup removing every `dist/galias-*` release artifact of any version plus intermediates and an emptied `dist/` directory [`scripts/build.sh`]
         - `scripts/build.sh::remove_release_artifacts(...)`: remove every `dist/` release artifact of every version, including git-tracked ones [`scripts/build.sh`]
@@ -287,6 +287,8 @@
           - `scripts/build.sh::remove_generated_path(...)`: remove one generated intermediate unless it holds git-tracked content [`scripts/build.sh`]
             - `scripts/build.sh::has_tracked_content(...)`: query `git ls-files` for tracked content below a path [`scripts/build.sh`]
         - `scripts/build.sh::remove_empty_dist_dir(...)`: remove an emptied `dist/` directory [`scripts/build.sh`]
+      - `scripts/build.sh::verify_previous_artifacts_removed(...)`: re-scan the active artifact directory after cleanup and abort with the surviving artifact list when a release artifact of any previous version remains [`scripts/build.sh`]
+        - `scripts/build.sh::collect_release_artifacts(...)`: re-select `dist/galias-*.tar.gz` and `dist/galias-*.whl` files to prove the cleanup left no old version behind [`scripts/build.sh`]
       - External boundary: `uv build --out-dir <temporary staging directory>` sdist and wheel build.
       - `scripts/build.sh::verify_staged_artifacts(...)`: require exactly one non-empty sdist and one non-empty wheel in the staging directory [`scripts/build.sh`]
         - `scripts/build.sh::verify_sdist_content(...)`: list the staged sdist members with `tar -tzf` and require the metadata, license, readme, lock file, and package entry module while rejecting `tests/`, `scripts/`, `usereq/`, `MANIFEST.in`, and generated egg-info files other than `SOURCES.txt` [`scripts/build.sh`]

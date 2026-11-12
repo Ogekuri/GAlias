@@ -6,8 +6,10 @@
 #          output (REQ-317) removing all `dist/` release artifacts of any
 #          version regardless of git tracking status plus an emptied `dist/`
 #          directory (REQ-282) and the `build/`/`src/*.egg-info` intermediates
-#          through the tracked-content guard (REQ-288, REQ-316), then `uv
-#          build` into a temporary staging directory, staged artifact
+#          through the tracked-content guard (REQ-288, REQ-316), pre-build
+#          verification that no previous release artifact survived that
+#          cleanup (REQ-327), then `uv build` into a temporary staging
+#          directory, staged artifact
 #          verification, and installation of exactly one sdist and one wheel
 #          into `dist/` (REQ-283), followed by a summary (REQ-285).
 #          The `on_exit` trap removes the staging directory and every build
@@ -23,7 +25,7 @@
 #          The repository root derives from the script location, so invocation
 #          works from any working directory (REQ-280).
 #          Complexity: O(N) over `dist/` entries plus the delegated build.
-# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285, REQ-286, REQ-287, REQ-288, REQ-307, REQ-316, REQ-317, REQ-326
+# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285, REQ-286, REQ-287, REQ-288, REQ-307, REQ-316, REQ-317, REQ-326, REQ-327
 
 set -Eeuo pipefail
 
@@ -262,6 +264,22 @@ run_cleanup() {
   return "$failed"
 }
 
+## @brief Verify that no release artifact of a previous version survives cleanup.
+# @details O(N) over matching entries of the active artifact directory;
+#          re-runs `collect_release_artifacts` after the pre-build cleanup and
+#          aborts with an explicit English error naming every surviving
+#          artifact, so a default-mode build never starts on top of an old
+#          release (REQ-282, REQ-317, REQ-327). The check is not executed in
+#          the `--output-dir` mode, which never inspects `dist/` (REQ-326).
+# @return None; never returns when a previous release artifact remains.
+# @satisfies REQ-282, REQ-317, REQ-327
+verify_previous_artifacts_removed() {
+  collect_release_artifacts
+  if [ "${#RELEASE_ARTIFACTS[@]}" -gt 0 ]; then
+    fail "Previous release artifacts still present in '$ARTIFACT_DIR': ${RELEASE_ARTIFACTS[*]}"
+  fi
+}
+
 ## @brief Implement `--clean`: remove generated outputs without building.
 # @details O(size of outputs); executes the inline cleanup flow with the
 #          canonical build progress lines and no separate cleanup script
@@ -485,15 +503,17 @@ on_exit() {
 ## @brief Execute the complete release-artifact build.
 # @details Registers the exit and signal traps, validates prerequisites, and
 #          branches on the active mode: the default mode runs the
-#          REQ-282/REQ-316/REQ-288 cleanup of every previous build, while the
-#          REQ-326 mode removes only `build/` and `src/*.egg-info` and creates
-#          the requested output directory without touching `dist/`. Both modes
-#          run `uv build` into the staging directory, verify and install the
-#          artifacts, and print the summary. Every step aborts the script on
-#          failure (REQ-285); the exit trap removes every intermediate so only
-#          the produced artifacts remain (REQ-284, REQ-317).
+#          REQ-282/REQ-316/REQ-288 cleanup of every previous build and then
+#          verifies that no release artifact of any previous version survived
+#          (REQ-327), while the REQ-326 mode removes only `build/` and
+#          `src/*.egg-info` and creates the requested output directory without
+#          touching `dist/`. Both modes run `uv build` into the staging
+#          directory, verify and install the artifacts, and print the summary.
+#          Every step aborts the script on failure (REQ-285); the exit trap
+#          removes every intermediate so only the produced artifacts remain
+#          (REQ-284, REQ-317).
 # @return None; exits non-zero on the first failing step.
-# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285, REQ-316, REQ-317, REQ-326
+# @satisfies REQ-280, REQ-281, REQ-282, REQ-283, REQ-284, REQ-285, REQ-316, REQ-317, REQ-326, REQ-327
 run_build() {
   trap on_exit EXIT
   trap 'exit 130' INT
@@ -507,6 +527,8 @@ run_build() {
   if [ "$MANAGE_DIST" -eq 1 ]; then
     log_step "Clean previous build outputs"
     run_cleanup || fail "Unable to clean previous build outputs"
+    log_step "Verify no previous release artifact remains"
+    verify_previous_artifacts_removed
   else
     log_step "Clean build intermediates"
     remove_build_intermediates || fail "Unable to clean build intermediates"
