@@ -18,9 +18,9 @@ from pathlib import Path
 #          metadata (REQ-196), PEP 639 license declaration (REQ-197), README
 #          install documentation (REQ-198), Node24 runner-generation pins
 #          without Node20 opt-out overrides (REQ-211, REQ-212, REQ-213), the
-#          tagged-artifact validation gate (REQ-314), and the test-release job
-#          gating publication on successful lock synchronization and full
-#          pytest execution (REQ-228, REQ-229).
+#          tagged-artifact validation gate (REQ-314), and the publication
+#          pipeline that runs no build-preparatory validation and is gated only
+#          on branch containment (REQ-228, REQ-229).
 # @satisfies REQ-112, REQ-113, REQ-114, REQ-193, REQ-194, REQ-195, REQ-196, REQ-197, REQ-198, REQ-211, REQ-212, REQ-213, REQ-228, REQ-229, REQ-313, REQ-314, REQ-315
 class ReleaseWorkflowPyPiTest(unittest.TestCase):
     ## @brief Repository root path used by release-contract tests.
@@ -97,6 +97,7 @@ class ReleaseWorkflowPyPiTest(unittest.TestCase):
         self.assertIn("subject-path: dist/*", attestation_block)
         for build_command in ("python -m build", "uv build", "scripts/build.sh"):
             self.assertNotIn(build_command, text)
+        self.assertNotIn("scripts/pre-release-check.sh", text)
 
     ## @brief Verify the tagged-commit pre-built artifacts are validated before use.
     # @details REQ-313 and REQ-314: the publish job requires exactly one
@@ -138,6 +139,7 @@ class ReleaseWorkflowPyPiTest(unittest.TestCase):
         self.assertIn("pypa/gh-action-pypi-publish", job_block)
         for build_command in ("python -m build", "uv build", "scripts/build.sh"):
             self.assertNotIn(build_command, job_block)
+        self.assertNotIn("scripts/pre-release-check.sh", job_block)
 
     ## @brief Verify GitHub Release step semantics are preserved.
     # @return None.
@@ -265,17 +267,18 @@ class ReleaseWorkflowPyPiTest(unittest.TestCase):
         )
 
     ## @brief Verify workflow pins Node24-based action major versions.
-    # @details REQ-213: checkout v5, setup-python v6, setup-uv v6, and
+    # @details REQ-213: checkout v5, setup-python v6, and
     #          attest-build-provenance v3 execute on the Node24 runtime
-    #          generation while every surrounding step stays unchanged.
+    #          generation while every surrounding step stays unchanged; the
+    #          removed build-preparatory job leaves no setup-uv step behind.
     # @return None.
     # @satisfies REQ-211, REQ-213
     def test_workflow_pins_node24_action_majors(self):
         # REQ-213: Node24-based action majors replace Node20-based majors.
         text = self._workflow_text()
-        self.assertEqual(text.count("uses: actions/checkout@v5"), 3)
+        self.assertEqual(text.count("uses: actions/checkout@v5"), 2)
         self.assertIn("uses: actions/setup-python@v6", text)
-        self.assertIn("uses: astral-sh/setup-uv@v6", text)
+        self.assertNotIn("uses: astral-sh/setup-uv@v6", text)
         self.assertIn("uses: actions/attest-build-provenance@v3", text)
 
     ## @brief Verify workflow keeps no Node20 fallback override.
@@ -289,41 +292,40 @@ class ReleaseWorkflowPyPiTest(unittest.TestCase):
         self.assertNotIn("node20", text.lower())
         self.assertNotIn("FORCE_JAVASCRIPT_ACTIONS_TO_NODE24", text)
         self.assertNotIn("ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION", text)
-    ## @brief Verify the test-release job runs lock check and full pytest suite.
-    # @details REQ-228: the test-release job executes after checkout with
-    #          Node24-based setup actions and runs `uv lock --check` followed
-    #          by `uv run pytest` before any publication job is declared.
+    ## @brief Verify the workflow runs no build-preparatory validation.
+    # @details REQ-228: the workflow declares no `test-release` job and runs no
+    #          `uv lock --check`, pytest suite, `scripts/build.sh`, or
+    #          `scripts/pre-release-check.sh`, because no build ever executes
+    #          inside GitHub Actions.
     # @return None.
-    # @satisfies REQ-228, REQ-213
-    def test_workflow_runs_test_release_job_with_lock_check_and_pytest(self):
+    # @satisfies REQ-228
+    def test_workflow_has_no_build_preparatory_validation(self):
         # Arrange
         text = self._workflow_text()
-        test_job_index = text.index("  test-release:")
-        publish_job_index = text.index("  publish-release:")
-        # Act
-        job_block = text[test_job_index:publish_job_index]
         # Assert
-        self.assertLess(test_job_index, publish_job_index)
-        self.assertIn("uses: actions/checkout@v5", job_block)
-        self.assertIn("uses: astral-sh/setup-uv@v6", job_block)
-        self.assertIn("run: uv lock --check", job_block)
-        self.assertIn("run: uv run pytest", job_block)
+        for forbidden in (
+            "test-release:",
+            "uv lock --check",
+            "uv run pytest",
+            "uses: astral-sh/setup-uv@v6",
+            "scripts/build.sh",
+            "scripts/pre-release-check.sh",
+        ):
+            self.assertNotIn(forbidden, text)
 
-    ## @brief Verify publish-release is gated on test-release success via needs.
-    # @details REQ-229: a failing test-release job skips publish-release and
-    #          therefore every downstream release step (attestation, GitHub
-    #          Release upload, PyPI publication).
+    ## @brief Verify publish-release is gated only on the branch-containment job.
+    # @details REQ-229: `needs` lists `check-branch` only, so no test, build, or
+    #          pre-release validation job can gate publication.
     # @return None.
     # @satisfies REQ-229
-    def test_workflow_gates_publish_release_on_test_release_success(self):
+    def test_workflow_gates_publish_release_only_on_check_branch(self):
         # Arrange
         text = self._workflow_text()
         # Act
-        publish_job_index = text.index("  publish-release:")
-        publish_job_block = text[publish_job_index:]
+        publish_job_block = text[text.index("  publish-release:"):]
         # Assert
-        self.assertIn("needs: [check-branch, test-release]", publish_job_block)
-        self.assertLess(text.index("  test-release:"), publish_job_index)
+        self.assertIn("needs: [check-branch]", publish_job_block)
+        self.assertNotIn("test-release", publish_job_block)
 
 
 if __name__ == "__main__":

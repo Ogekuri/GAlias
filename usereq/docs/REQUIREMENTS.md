@@ -17,13 +17,14 @@ tags: ["requirements", "srs", "galias"]
 ---
 
 # GAlias CLI Requirements
-**Version**: 1.56
+**Version**: 1.57
 **Author**: Francesco Rolando
 **Date**: 2026-11-12
 
 ## Revision History
 | Date | Version | Change Summary |
 |------|---------|----------------|
+| 2026-11-12 | 1.57 | Removed the build-preparatory `test-release` job (lock synchronization and pytest) from `release-pypi.yml` and gated `publish-release` only on the branch-containment job (REQ-228, REQ-229, REQ-213): the automation consumes and publishes the pre-built `dist/` artifacts of the tagged release commit and never executes `scripts/build.sh` or `scripts/pre-release-check.sh` (REQ-313). |
 | 2026-11-12 | 1.56 | Removed `scripts/clean.sh` (REQ-309..REQ-312) and integrated its cleanup into the start of every `scripts/build.sh` build (REQ-286, REQ-317): all `dist/` release artifacts of every version are removed regardless of git tracking status (REQ-282), build intermediates stay behind the tracked-content guard (REQ-288, REQ-316), and a successful build leaves only the produced artifacts with no intermediate residue (REQ-284). |
 | 2026-11-11 | 1.55 | Changed `release-pypi.yml` to a build-free automation consuming the pre-built `dist/` artifacts of the tagged release commit: provenance attestation without any distribution build (REQ-113), asset upload from the tagged commit (REQ-114), pre-built PyPI publication (REQ-194), renamed `publish-release` gate (REQ-229), and the new tagged-artifact consumption and validation contracts (REQ-313..REQ-315). |
 | 2026-11-11 | 1.54 | Added `scripts/clean.sh` as the dedicated cleanup entry point for every artifact created by `scripts/build.sh` (REQ-309..REQ-312), made `scripts/build.sh --clean` delegate to it (REQ-286), and routed the pre-release cleanup through it (REQ-226, REQ-288). |
@@ -292,12 +293,12 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-114**: MUST publish a non-draft, non-prerelease GitHub Release for the triggering tag, uploading the pre-built `dist/**/*` assets of the tagged commit using changelog content produced by the configured changelog-builder step.
 - **REQ-193**: MUST grant workflow `release-pypi.yml` top-level permissions `contents: write`, `id-token: write`, and `attestations: write` for release publication and PyPI OIDC Trusted Publishing.
 - **REQ-194**: MUST publish the pre-built `dist/` distributions of the tagged release commit to PyPI project `galias` through `pypa/gh-action-pypi-publish` using OIDC Trusted Publishing without API tokens or username/password credentials.
-- **REQ-195**: MUST execute PyPI publication as post-steps after the GitHub Release step while preserving existing build, attestation, changelog, and release steps in `release-pypi.yml`.
+- **REQ-195**: MUST execute PyPI publication as post-steps after the GitHub Release step while preserving existing artifact-verification, attestation, changelog, and release steps in `release-pypi.yml`.
 - **REQ-205**: MUST execute the PyPI publication step (REQ-194) only when the triggering tag commit `${GITHUB_SHA}` is contained in `origin/master`.
 - **REQ-206**: MUST skip PyPI publication and execute all remaining release workflow steps when the triggering tag commit is contained in `origin/develop` and not in `origin/master`.
 - **REQ-211**: MUST execute all `release-pypi.yml` automation on the GitHub Actions Node24 runner generation or newer, preserving every existing release step, trigger, gate, and publication behavior.
 - **REQ-212**: MUST NOT set `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` or `ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION` in any repository workflow file.
-- **REQ-213**: MUST reference Node24-based action majors `actions/checkout@v5`, `actions/setup-python@v6`, `astral-sh/setup-uv@v6`, and `actions/attest-build-provenance@v3` in `release-pypi.yml`.
+- **REQ-213**: MUST reference Node24-based action majors `actions/checkout@v5`, `actions/setup-python@v6`, and `actions/attest-build-provenance@v3` in `release-pypi.yml`.
 - **REQ-207**: MUST resolve configured `ver_rules` entries from JSON objects containing `pattern` and `regex`, with `regex` optional for negation patterns; entries without a `pattern` value MUST be ignored.
 - **REQ-196**: MUST declare PyPI-compliant `[project]` metadata in `pyproject.toml`: `name = "galias"`, `description`, `readme`, `requires-python`, `keywords`, `classifiers`, and project URLs.
 - **REQ-197**: MUST declare the `pyproject.toml` project license as the PEP 639 SPDX expression `GPL-3.0-only` with explicit `license-files` including `LICENSE`.
@@ -349,9 +350,9 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-223**: MUST NOT modify tracked repository files at any validation step.
 - **REQ-226**: MUST remove at exit every generated artifact (`dist/` release artifacts, `build/`, `src/*.egg-info`), `.pytest_cache`, `src/`/`tests/` `__pycache__` directories, and its temporary directory.
 - **REQ-227**: MUST preserve a pre-existing uv-managed `.venv` environment and remove at exit a `.venv` created during the run.
-- **REQ-228**: MUST run a `test-release` job in `release-pypi.yml` executing `uv lock --check` and the complete pytest suite via `uv run pytest` for every triggering tag commit.
-- **REQ-229**: MUST gate `publish-release` on successful completion of `test-release` via `needs` so failed tests skip attestation, GitHub Release, and PyPI publication.
-- **REQ-313**: MUST create GitHub Release assets exclusively from the pre-built `dist/` sdist and wheel committed in the tagged release commit, and MUST NOT execute `scripts/build.sh`, `uv build`, or `python -m build` in `release-pypi.yml`.
+- **REQ-228**: MUST execute `release-pypi.yml` without any build-preparatory validation job, consuming the pre-built tagged-commit `dist/` artifacts directly.
+- **REQ-229**: MUST gate `publish-release` only on the `check-branch` job via `needs`, so no test, build, or pre-release validation job participates in the release pipeline.
+- **REQ-313**: MUST create GitHub Release assets exclusively from the pre-built `dist/` sdist and wheel committed in the tagged release commit, and MUST NOT execute `scripts/build.sh`, `scripts/pre-release-check.sh`, `uv build`, or `python -m build` in `release-pypi.yml`.
 - **REQ-314**: MUST verify with Python 3.11 before attestation and publication that `dist/` holds exactly one git-tracked sdist and one git-tracked wheel matching the `pyproject.toml` name and version, aborting otherwise.
 - **REQ-315**: MUST publish to PyPI the pre-built `dist/` distributions of the tagged release commit through REQ-194 without rebuilding them.
 - **REQ-224**: MUST print one `--- [pre-release-check] <message> ---` English progress line per step plus a final success line.
@@ -459,7 +460,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 ### 3.4 Component Organization
 - `core.py` implements dispatch, command handlers, config loading/writing, git subprocess wrappers, and release/changelog flows.
 - `forest.py` implements vine-based text tree rendering for git history (`l` alias).
-- `release-pypi.yml` implements manual-or-tag-triggered publication of the pre-built `dist/` artifacts of the tagged release commit, GitHub Release publication, and PyPI OIDC Trusted Publishing without executing any distribution build (REQ-113, REQ-313); tag commits contained in `origin/master` or `origin/develop` run the release workflow, and only master-contained tag commits publish to PyPI (REQ-205, REQ-206). Release automation executes on the GitHub Actions Node24 runner generation without Node20 opt-out overrides (REQ-211, REQ-212, REQ-213). A `test-release` job runs lock synchronization and the complete pytest suite before the gated `publish-release` job, so failed tests prevent attestation and any publication (REQ-228, REQ-229). Artifact presence, tagged-commit tracking, and name/version agreement are verified before attestation and publication (REQ-314), and PyPI receives the unchanged pre-built distributions (REQ-194, REQ-315).
+- `release-pypi.yml` implements manual-or-tag-triggered publication of the pre-built `dist/` artifacts of the tagged release commit, GitHub Release publication, and PyPI OIDC Trusted Publishing without executing any distribution build (REQ-113, REQ-313); tag commits contained in `origin/master` or `origin/develop` run the release workflow, and only master-contained tag commits publish to PyPI (REQ-205, REQ-206). Release automation executes on the GitHub Actions Node24 runner generation without Node20 opt-out overrides (REQ-211, REQ-212, REQ-213). `publish-release` is gated only on the `check-branch` job and runs no build-preparatory validation (REQ-228, REQ-229); the workflow never executes `scripts/build.sh` or `scripts/pre-release-check.sh` (REQ-313). Artifact presence, tagged-commit tracking, and name/version agreement are verified before attestation and publication (REQ-314), and PyPI receives the unchanged pre-built distributions (REQ-194, REQ-315).
 - `scripts/build.sh` implements the release-artifact build flow: prerequisite checks, automatic cleanup of every previous `dist/` release artifact of any version plus `build/` and `src/*.egg-info` (REQ-282, REQ-316, REQ-317), staged `uv build`, artifact verification, installation into `dist/`, post-build intermediate removal (REQ-284), and the `--clean`/`--list-artifacts` modes (REQ-280..REQ-288).
 - `scripts/pre-release-check.sh` implements the repository-local release-readiness flow: toolchain and structure checks, syntax checks, lockfile synchronization, version consistency, full pytest execution, `scripts/build.sh` invocation, artifact validation, and signal-safe cleanup with repository-integrity verification (REQ-217..REQ-227, REQ-288..REQ-300).
 - `.gitignore` implements the exclude-all-then-re-include strategy, re-includes root `dist/` release artifacts as versionable files, and excludes nested `dist` directories (REQ-301..REQ-303).
@@ -476,7 +477,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-206** evidence: `.github/workflows/release-pypi.yml` lines 54-57 (`build-release` job gated by `is_release` output covering develop-only tags) and lines 144-145 (publish step skipped when the tag is not master-contained).
 - **REQ-211** evidence: `.github/workflows/release-pypi.yml` executes every job on `ubuntu-latest` with the Node24 runner default, preserving triggers, containment gate, and publication steps unchanged.
 - **REQ-212** evidence: `.github/workflows/release-pypi.yml` contains no `FORCE_JAVASCRIPT_ACTIONS_TO_NODE24` and no `ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION` entries.
-- **REQ-213** evidence: `.github/workflows/release-pypi.yml` pins `actions/checkout@v5` (test-release, check-branch, and build-release jobs), `actions/setup-python@v6`, `astral-sh/setup-uv@v6`, and `actions/attest-build-provenance@v3`.
+- **REQ-213** evidence: `.github/workflows/release-pypi.yml` pins `actions/checkout@v5` (check-branch and publish-release jobs), `actions/setup-python@v6`, and `actions/attest-build-provenance@v3`, with no `astral-sh/setup-uv@v6` step.
 - **REQ-196** evidence: `pyproject.toml` `[project]` table (`name`, `description`, `readme`, `requires-python`, `keywords`, `classifiers`) plus `[project.urls]` entries.
 - **REQ-197** evidence: `pyproject.toml` `license = "GPL-3.0-only"` SPDX expression, `license-files` declaration, and `build-system` `setuptools>=77.0.0` requirement.
 - **REQ-198** evidence: `README.md` Quick Start primary `uv tool install galias --force` command plus the dedicated uvx alternative-usage and GitHub install sections.
@@ -559,9 +560,9 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-317** evidence: `scripts/build.sh` `run_build` `Clean previous build outputs` step executing `run_cleanup` before the `uv build` step.
 - **REQ-224** evidence: `scripts/pre-release-check.sh` `--- [pre-release-check] ... ---` progress lines plus the final success line.
 - **REQ-225** evidence: `scripts/pre-release-check.sh` `run_step` fail-fast handler exiting non-zero at the first failed step.
-- **REQ-228** evidence: `.github/workflows/release-pypi.yml` `test-release` job running `uv lock --check` and `uv run pytest` after `actions/checkout@v5` and `astral-sh/setup-uv@v6`.
-- **REQ-229** evidence: `.github/workflows/release-pypi.yml` `publish-release` `needs: [check-branch, test-release]` dependency making test failure skip attestation, GitHub Release, and PyPI publication.
-- **REQ-313** evidence: `.github/workflows/release-pypi.yml` `publish-release` job absence of `scripts/build.sh`, `uv build`, and `python -m build`, with assets consumed from the checked-out tagged commit `dist/` directory.
+- **REQ-228** evidence: `.github/workflows/release-pypi.yml` declares no `test-release` job and no `uv lock --check`, `uv run pytest`, or build-preparatory validation step.
+- **REQ-229** evidence: `.github/workflows/release-pypi.yml` `publish-release` `needs: [check-branch]` dependency only.
+- **REQ-313** evidence: `.github/workflows/release-pypi.yml` absence of `scripts/build.sh`, `scripts/pre-release-check.sh`, `uv build`, and `python -m build`, with assets consumed from the checked-out tagged commit `dist/` directory.
 - **REQ-314** evidence: `.github/workflows/release-pypi.yml` `Verify pre-built release artifacts` step resolving the `pyproject.toml` version, requiring exactly one sdist and one wheel, and failing on missing, untracked, or mismatched artifacts before attestation.
 - **REQ-315** evidence: `.github/workflows/release-pypi.yml` PyPI publication step consuming the verified `dist/` directory without a preceding build.
 - **REQ-236** evidence: `src/git_alias/core.py` `UV_TOOL_FORCE_UPGRADE_OPTIONS` constant (`--force`, `--reinstall`, `--refresh`) appended to `UV_TOOL_UPGRADE_COMMAND` by `upgrade_self(force=True)` on the Linux PyPI path.
