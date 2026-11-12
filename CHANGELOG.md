@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.52.2](https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.2) - 2026-11-12
+## [0.52.3](https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.3) - 2026-11-12
 ### ⛰️  Features
 - Update gitalias config.
 - add clean.sh removing all build.sh artifacts [useReq] *(scripts)*
@@ -11,6 +11,9 @@
   scripts/build.sh --clean now delegates to scripts/clean.sh (REQ-286).; pre-release-check cleanup uses scripts/clean.sh (REQ-226, REQ-288).; Added tests/test_clean_script.py suite; 504 tests pass.; Updated WORKFLOW.md with the PROC:clean-sh unit and its edges.
 
 ### 🐛  Bug Fixes
+- Re-resolve latest PyPI release on self-upgrade [useReq] *(upgrade)*
+  Append the uv resolver option '--upgrade' to the default PyPI self-upgrade argv: plain 'uv tool install galias' reuses an already-installed release that satisfies the recorded unpinned requirement, so '--upgrade' reported a successful install while the installed version stayed 0.52.1 (REQ-001). The REQ-236 forced argv and the REQ-209 tag-pinned GitHub argv stay unchanged.
+  Add a reproducer unit test for the latest-release install argv and refresh WORKFLOW.md and REFERENCES.md.
 - Report missing git and uv tools explicitly [useReq] *(pre-release-check)*
   Defect: a missing git or uv executable surfaced only as Bash's localized
   command-not-found line followed by a generic step failure (REQ-219).
@@ -1033,7 +1036,7 @@
 - \[0.50.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.50.0
 - \[0.51.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.51.0
 - \[0.52.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.0
-- \[0.52.2\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.2
+- \[0.52.3\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.3
 
 [0.1.0]: https://github.com/Ogekuri/GAlias/releases/tag/v0.1.0
 [0.2.0]: https://github.com/Ogekuri/GAlias/compare/v0.1.0..v0.2.0
@@ -1087,4 +1090,4 @@
 [0.50.0]: https://github.com/Ogekuri/GAlias/compare/v0.49.0..v0.50.0
 [0.51.0]: https://github.com/Ogekuri/GAlias/compare/v0.50.0..v0.51.0
 [0.52.0]: https://github.com/Ogekuri/GAlias/compare/v0.51.0..v0.52.0
-[0.52.2]: https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.2
+[0.52.3]: https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.3
