@@ -60,7 +60,7 @@ This allows them to be run both as a Python package (installed as <b>g</b> or <b
   - `rollback`: Restore branch content to a previous commit/tag by creating a dedicated rollback `revert` commit. Runs a version pre-check first and preserves the current application version by restoring it via `chver` before the rollback commit.
   - `misc`: Miscellaneous tasks.
   - `cover`: Add/adjust tests to improve coverage.
-- Provides `major`, `minor`, and `patch` release commands that auto-generate a `CHANGELOG.md`, create a tag on configured `master`; the `--dev`/`--develop` option limits any release to configured `develop`.
+- Provides `major`, `minor`, and `patch` release commands that auto-generate a `CHANGELOG.md` and tag the integrated branch: configured `master` by default, or configured `develop` when `--dev`/`--develop` limits the release to it.
   | Command | Branch | Changelog Type |
   | --- | --- | --- |
   | patch --dev | work -> develop | Include patch versions |
@@ -71,11 +71,12 @@ This allows them to be run both as a Python package (installed as <b>g</b> or <b
 - Provides `backup` command to run release preflight checks, merge `work` into `develop`, push `develop`, and return to `work`.
 - Provides `get` command to fast-forward local `master` and `develop` from `origin` (with tags), then fast-forward merge `develop` into `work` after strict preflight checks.
 - Provides `str` command to print all remotes and run `git remote show <remote>` for each.
-- Provides visual diff aliases for repository comparisons: `dwc` (working tree vs `HEAD`), `dcc` (`HEAD~1` vs `HEAD`), `dccc` (`HEAD~2` vs `HEAD`), `dwcc` (working tree vs `HEAD~1`), `dw <ref>` (working tree vs a specific ref), `dc <ref_a> <ref_b>` (between two refs), plus configured-branch comparisons `dcd` (`develop` vs `work`), `dcm` (`master` vs `work`), and `ddm` (`master` vs `develop`).
+- Provides visual diff aliases for repository comparisons: `dwc` (working tree vs `HEAD`), `dcc` (`HEAD~1` vs `HEAD`), `dccc` (`HEAD~2` vs `HEAD`), `dwcc` (working tree vs `HEAD~1`), `dw <ref>` (working tree vs a specific ref), `dc <ref> [<ref_prev>]` (diff from `<ref_prev>` to `<ref>`; `<ref_prev>` defaults to `<ref>~1`), plus configured-branch comparisons `dcd` (`develop` vs `work`), `dcm` (`master` vs `work`), and `ddm` (`master` vs `develop`).
 - Provides worktree aliases: `wt` (generic `git worktree` subcommands with arguments forwarded unchanged), `wtl` (dedicated `git worktree list` with `-v`/`--porcelain`/`-z` forwarding), `wtp` (`git worktree prune ...`), and `wtd` (worktree delete with paired branch cleanup and optional `--force`).
 - Provides file listing aliases: `ls` lists tracked files; `lsa` lists untracked files; `lsi` lists ignored/untracked files and applies a default directory/suffix filter unless `--include-all` is provided.
 - Provides an overview alias: `o` prints a structured repository summary with working-tree status, branch divergence/alignment sections, and a branch table that lists configured branches first and then all other local/remote branches with latest commit subjects.
 - Version management commands: `ver` checks version consistency (supports `--verbose`/`--debug`), `chver <major.minor.patch>` updates files matched by `ver_rules`, and `changelog` generates `CHANGELOG.md` (supports `--include-patch`, `--force-write`, `--print-only`, `--disable-history`).
+- Checks PyPI for a newer release on startup within an idle window (1 hour after success, 24 hours after errors) and prints an update warning; `--ver` forces an online check and reports installed, PyPI, and GitHub versions.
 - Self-upgrade and self-uninstall management commands are Linux-only for local execution (`--upgrade`, `--uninstall`), with manual command hints on other platforms.
 - Includes a **quick overview** command `o`:
 [![Flowchart](https://raw.githubusercontent.com/Ogekuri/GAlias/refs/heads/master/images/command_o_overview_sample1.png)](https://raw.githubusercontent.com/Ogekuri/GAlias/refs/heads/master/images/command_o_overview_sample1.png)
@@ -86,7 +87,7 @@ This allows them to be run both as a Python package (installed as <b>g</b> or <b
 
 ## Requirements
 
-- Astral `uv` tool is required for project execution (`uv tool`, `uvx`, and `uv run` flows).
+- Astral `uv` is required to install or upgrade GAlias, to run it through `uvx`, and for the repository-local launcher (`uv run`); normal command execution through an installed `g`/`galias` console script does not require `uv`.
 - A separate external or system-managed Python virtual environment is not required.
 - When needed, you can generate a transient `requirements.txt` file with:
   ```bash
@@ -143,8 +144,8 @@ This allows them to be run both as a Python package (installed as <b>g</b> or <b
 
 Configuration uses `$HOME/.config/galias/config.json` for `Global` and
 repository-root `.galias.conf` for `Local` (current directory outside Git).
-Files are created only by explicit mutations. These commands replace the former
-normalization command; no migration is performed.
+The global file is auto-created with schema defaults on the first configuration
+command; the local file is created only by explicit mutations.
 
 ```bash
 g --info
@@ -156,7 +157,7 @@ g --set Global:edit_command "$EDITOR"
 g --set Local:work topic
 g --get Local
 g --get Local:ver_rules:0:pattern
-g --set Local:ver_rules '[{"pattern":"VERSION","regex":"(\\\\d+\\\\.\\\\d+\\\\.\\\\d+)"}]'
+g --set Local:ver_rules '[{"pattern":"VERSION","regex":"(\\d+\\.\\d+\\.\\d+)"}]'
 g --unset Local:work
 g --unset Local:ver_rules:0
 g --unset Local
@@ -167,19 +168,22 @@ Paths are case-sensitive, use `:` separators, and support zero-based array
 indices. `--set PATH VALUE` accepts strings as one argument and objects or
 arrays as one shell-quoted JSON argument; regex backslashes must be doubled in
 JSON. The shell expands environment variables before invocation; GAlias stores
-the received string without executing it. Replace an entire array to add entries.
+the received string without executing it. Use `:append` (or `:+`) to add one
+array entry and `:insert:<Idx>` to insert at a zero-based position.
 
 `--get` returns JSON and resolves absent top-level keys from defaults.
 `--unset` removes persisted keys, restores their defaults, removes array
 entries, or clears a scope. Required version-rule fields cannot be removed;
 exclusion rules may omit `regex`. Invalid input fails before writing. Each
-mutation atomically replaces only the selected file. Read commands never create
-configuration files.
+mutation atomically replaces only the selected file. Read commands never modify
+existing configuration files.
 
-`--print` shows effective values as a tree: scalar options print as plain
-unquoted text and complex values render as box-drawing tables. `--info`
-documents every path with its input type, a short description, allowed-value
-tables when constrained, and one input example. `--print-raw [Global|Local]`
+`--print` shows effective values as a tree: scalar values print as JSON-style
+text (strings quoted) with `(default)` or `(custom | default: ...)`
+annotations, while arrays and maps render as box-drawing tables. `--info`
+documents every path with its bracketed type and constraints, description,
+default, allowed-value tables when constrained, item schema for arrays, and
+ready-to-run `--set`/`--unset` commands. `--print-raw [Global|Local]`
 emits exact stored bytes; without a selector it concatenates global then local
 bytes. File labels and missing-file notices go to stderr; stdout carries no
 added separators.
@@ -212,7 +216,6 @@ The default `ver_rules` select `README.md`, `src/**/*.py`, and `pyproject.toml`.
 
 - Global settings contain terminal/graphical pairs for `edit_command`, `diff_command`, `gr_command`, and `gp_command`; graphical variants end in `_gfx`.
 - Configuration mutations persist canonical keys only; unrelated file keys are ignored.
-- Every configuration change must update CLI access, validation, help, discovery, rendering, and tests (DES-010).
 
 
 ### Work-in-Progress Commits
@@ -241,6 +244,8 @@ g minor
 
 The command must run from the `work` branch with a clean working tree; it bumps versions per `ver_rules`, creates a temporary local annotated `v<next>` tag only for changelog generation, deletes that temporary tag after changelog generation, and creates the definitive tag immediately before push (`--dev`/`--develop`: on `develop`, then an atomic push of `develop` with the release tag only; default: on `master`, then an atomic push of `master` with the release tag after pushing `develop`).
 
+Add `--include-patch` to include the latest patch release after the last minor release in the regenerated changelog. Use `--resume` (optionally with `--dev`/`--develop`) to validate and publish an already prepared release without bumping versions, amending commits, or recreating its tag; completed publication is a no-op.
+
 
 ## Management Commands
 
@@ -253,17 +258,11 @@ Upgrade or uninstall the GAlias CLI:
 - `g --ver` / `g --version` / `galias --ver` / `galias --version`: Prints the CLI version and the latest versions available on PyPI and GitHub.
 - `g --help` / `galias --help`: Prints management commands, configuration parameters, and the alias list; use `g --help <command>` for a single command.
 
-### README Maintenance Policy
-
-When a CLI command is added, modified, or removed, this README is updated to reflect user-facing usage changes.
-Internal logic-only refactoring that does not change command behavior does not require README updates.
-
-
 ## CLI Examples
 
 Some CLI examples:
 
-- `g`: Prints `Please provide a command or --help` and `Usage: g <command> [options]`.
+- `g`: Prints `Please provide a command or --help` and `Usage: g <command> [options] (<version>)`.
 - `g --help` / `galias --help`: Prints management commands, configuration parameters, and the alias list; use `g --help <command>` for a single command.
 - `g lg --help`: Shows the help text for the `lg` alias.
 - `g cm "Message"`: Runs `git commit` with the provided message.
@@ -292,4 +291,4 @@ Some CLI examples:
 ## Acknowledgments
 
 Special thanks to Jan Engelhardt and Takaaki Kasai, authors of the Perl
-[git-foresta](https://github.com/takaaki-kasai/git-foresta) program, integrated in G.
+[git-foresta](https://github.com/takaaki-kasai/git-foresta) program, integrated in GAlias CLI.
