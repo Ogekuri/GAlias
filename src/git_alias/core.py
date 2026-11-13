@@ -102,11 +102,11 @@ UV_TOOL_UPGRADE_COMMAND = (
 )
 
 ## @brief Resolver options forcing uv to install the latest PyPI release.
-## @details Tuple `("--upgrade",)` appended to `UV_TOOL_UPGRADE_COMMAND` on the
+## @details Tuple `("--upgrade",)` appended to the self-upgrade argv on the
 ##          unforced PyPI path. `uv tool install galias` alone reuses the
-##          already-installed tool whenever the recorded unpinned requirement
-##          `galias` is satisfied, so an older installed release survives the
-##          command (observed defect: PyPI 0.52.2 available, upgrade reported
+##          already-installed tool whenever the recorded requirement `galias`
+##          is satisfied, so an older installed release survives the command
+##          (observed defect: PyPI 0.52.2 available, upgrade reported
 ##          `Installed 2 executables: g, galias`, installed version stayed
 ##          0.52.1). `--upgrade` makes uv re-resolve the requirement against the
 ##          index and therefore install the latest release required by REQ-001.
@@ -115,6 +115,9 @@ UV_TOOL_UPGRADE_COMMAND = (
 ##          Not appended to the REQ-236 forced argv, whose
 ##          `--force --reinstall --refresh` options already re-resolve and
 ##          reinstall, nor to the REQ-209 tag-pinned GitHub argv.
+##          `_build_pypi_upgrade_command` additionally pins the requirement to
+##          the resolved latest PyPI version so a differently sourced installed
+##          release is replaced rather than treated as already satisfied.
 ## @satisfies REQ-001
 UV_TOOL_UPGRADE_RESOLVER_OPTIONS = ("--upgrade",)
 
@@ -377,6 +380,47 @@ def _print_update_check_error(detail: str) -> None:
 def _resolve_release_api_url(repo_root: Path) -> str:
     del repo_root
     return PYPI_LATEST_VERSION_API
+
+
+## @brief Fetch the latest PyPI release version for the self-upgrade requirement.
+# @details Performs exactly one HTTP GET against `PYPI_LATEST_VERSION_API`
+#          (REQ-124, REQ-199), decodes the JSON payload, normalizes the
+#          `info.version` field through `_normalize_semver_text`, and accepts it
+#          only when it parses as a semantic version tuple. Every transport,
+#          payload, or normalization failure returns `None` without raising so
+#          `upgrade_self` can degrade to the unpinned requirement. Never mutates
+#          the update-check idle-time cache and never prints diagnostics.
+# @param timeout_seconds {float} Request timeout in seconds (REQ-125).
+# @return {Optional[str]} Latest PyPI semantic version text, or `None` when the
+#         metadata request, payload decode, or version normalization fails.
+# @note Complexity: O(payload) for one HTTP GET plus one JSON decode.
+# @see upgrade_self, check_for_newer_version
+# @satisfies REQ-001, REQ-124, REQ-199
+def _fetch_pypi_latest_version(
+    timeout_seconds: float = VERSION_CHECK_TIMEOUT_SECONDS,
+) -> Optional[str]:
+    request = Request(
+        PYPI_LATEST_VERSION_API,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": PYPI_PROJECT_NAME,
+        },
+        method="GET",
+    )
+    try:
+        with urlopen(request, timeout=timeout_seconds) as response:
+            payload_text = response.read().decode("utf-8")
+        data = json.loads(payload_text)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    info = data.get("info")
+    version_text = str(info.get("version") or "") if isinstance(info, dict) else ""
+    latest_text = _normalize_semver_text(version_text)
+    if _parse_semver_tuple(latest_text) is None:
+        return None
+    return latest_text
 
 
 ## @brief Coerce candidate JSON timestamp values into unix-second integers.
@@ -3656,6 +3700,36 @@ def _print_non_linux_management_command(
     print(f"Run manually: {' '.join(command_tokens)}", file=sys.stderr)
 
 
+## @brief Build the unforced PyPI self-upgrade argv for the resolved release.
+# @details Implements the REQ-001 requirement contract by substituting the
+#          last `UV_TOOL_UPGRADE_COMMAND` token `galias` with the exact
+#          `galias==<latest_version>` requirement when the latest PyPI version
+#          was resolved. uv treats a differently sourced or newer installed
+#          release as satisfying an unpinned requirement, so the exact pin is
+#          what makes `--upgrade` install the latest PyPI publication (observed
+#          defect: GitHub-sourced 0.52.4 installed, PyPI latest 0.52.3, argv
+#          `uv tool install galias --upgrade` audited without changing the tool).
+#          An unresolved version keeps the unpinned requirement, and the
+#          `--upgrade` resolver option is always appended. Performs no I/O.
+# @param latest_version {Optional[str]} Latest PyPI semantic version text, or
+#        `None` when resolution failed.
+# @return {Tuple[str, ...]} `uv tool install galias[==<latest>] --upgrade` argv.
+# @note Complexity: O(1) string composition.
+# @see upgrade_self, _fetch_pypi_latest_version
+# @satisfies REQ-001
+def _build_pypi_upgrade_command(
+    latest_version: Optional[str] = None,
+) -> Tuple[str, ...]:
+    requirement = (
+        f"{UV_TOOL_NAME}=={latest_version}" if latest_version else UV_TOOL_NAME
+    )
+    return (
+        UV_TOOL_UPGRADE_COMMAND[:3]
+        + (requirement,)
+        + UV_TOOL_UPGRADE_RESOLVER_OPTIONS
+    )
+
+
 ## @brief Execute `upgrade_self` runtime logic for Git-Alias CLI.
 # @details Selects the GitHub tagged-release source (REQ-201) when `github` is
 #          True and the PyPI default release (REQ-001) otherwise. The GitHub
@@ -3663,16 +3737,17 @@ def _print_non_linux_management_command(
 #          `_fetch_github_latest_release_tag` (REQ-208) and installs through
 #          `_build_github_upgrade_command` (REQ-209); resolution failure
 #          aborts with an explicit English error and non-zero exit before any
-#          install (REQ-210). The unforced PyPI path runs
-#          `UV_TOOL_UPGRADE_COMMAND + UV_TOOL_UPGRADE_RESOLVER_OPTIONS` so uv
-#          re-resolves the index and installs the latest release even when an
-#          older release already satisfies the recorded unpinned requirement
-#          (REQ-001). When `force` is True the executed argv appends
+#          install (REQ-210). The unforced PyPI path pins the requirement to the
+#          latest PyPI version resolved by `_fetch_pypi_latest_version` and runs
+#          the `--upgrade` resolver option, so uv installs that PyPI publication
+#          even when a differently sourced or newer release is installed
+#          (REQ-001); an unresolved version keeps the unpinned requirement.
+#          When `force` is True the executed argv appends
 #          `UV_TOOL_FORCE_UPGRADE_OPTIONS` (`--force --reinstall --refresh`)
 #          so uv performs a forced download plus complete reinstallation
-#          (REQ-236, REQ-237) without the resolver option. Non-Linux hosts
-#          receive the exact manual command matching the selected source and
-#          force mode without local execution (REQ-129).
+#          (REQ-236, REQ-237) without the resolver option and without the pin.
+#          Non-Linux hosts receive the exact manual command matching the
+#          selected source and force mode without local execution (REQ-129).
 # @param repo_root Input parameter consumed by `upgrade_self`.
 # @param github {bool} When True, upgrade from the newest GitHub release tag
 #        (REQ-201, REQ-208, REQ-209) instead of the default PyPI release
@@ -3680,7 +3755,7 @@ def _print_non_linux_management_command(
 # @param force {bool} When True, append the uv forcing options
 #        `--force --reinstall --refresh` to the selected install argv
 #        (REQ-236, REQ-237); when False, run the standard install that
-#        re-resolves the latest release (REQ-001, REQ-209).
+#        installs the latest PyPI release (REQ-001, REQ-209).
 # @return None; side-effect: uv tool install subprocess, manual-command
 #         guidance, or English abort diagnostic with non-zero exit.
 # @exception SystemExit Exit code 1 when REQ-208 tag resolution fails (REQ-210).
@@ -3692,12 +3767,18 @@ def upgrade_self(
 ):
     del repo_root
     if not github:
-        command = UV_TOOL_UPGRADE_COMMAND
+        on_linux = _is_linux_platform()
         if force:
             command = UV_TOOL_UPGRADE_COMMAND + UV_TOOL_FORCE_UPGRADE_OPTIONS
+        elif on_linux:
+            command = _build_pypi_upgrade_command(
+                _fetch_pypi_latest_version(
+                    timeout_seconds=VERSION_CHECK_TIMEOUT_SECONDS
+                )
+            )
         else:
             command = UV_TOOL_UPGRADE_COMMAND + UV_TOOL_UPGRADE_RESOLVER_OPTIONS
-        if not _is_linux_platform():
+        if not on_linux:
             _print_non_linux_management_command("upgrade", command)
             return
         _run_checked(list(command))

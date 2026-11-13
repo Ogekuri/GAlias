@@ -332,19 +332,53 @@ class UpdateCheckTest(unittest.TestCase):
         )
         self.assertEqual(data["last_check_unix"], 0)
 
-    ## @brief Verify the default PyPI self-upgrade re-resolves the latest release (REQ-001).
-    # @details Defect reproducer: `uv tool install galias` reuses an already-satisfied
-    #          unpinned requirement, so an installed older release survives the command
-    #          even though uv prints a successful install. The default argv therefore
-    #          MUST carry the `--upgrade` resolver option while still carrying no
-    #          REQ-236 forcing option and no GitHub `--from` override.
+    ## @brief Verify the default PyPI self-upgrade pins the latest release (REQ-001).
+    # @details Defect reproducer: an installed release whose source is not PyPI
+    #          (for example a GitHub tag install) survives `uv tool install galias
+    #          --upgrade` because the recorded requirement stays satisfied, so the
+    #          PyPI publication is never installed even when it is older than the
+    #          installed release. The default argv therefore MUST pin the resolved
+    #          latest PyPI version while still carrying no REQ-236 forcing option
+    #          and no GitHub `--from` override.
     # @param self {UpdateCheckTest} Isolated test instance.
-    # @return {None} Assert the REQ-001 latest-release install argv.
-    def test_upgrade_self_pypi_argv_re_resolves_latest_release(self):
+    # @return {None} Assert the REQ-001 pinned latest-release install argv.
+    def test_upgrade_self_pypi_argv_pins_latest_release(self):
         # REQ-001: default --upgrade installs the latest PyPI release.
-        with mock.patch.object(core, "_is_linux_platform", return_value=True):
-            with mock.patch.object(core, "_run_checked") as run_checked:
-                core.upgrade_self(Path("/repo"))
+        with mock.patch.object(
+            core, "_fetch_pypi_latest_version", return_value="0.52.3"
+        ) as fetch_latest:
+            with mock.patch.object(core, "_is_linux_platform", return_value=True):
+                with mock.patch.object(core, "_run_checked") as run_checked:
+                    core.upgrade_self(Path("/repo"))
+        fetch_latest.assert_called_once()
+        run_checked.assert_called_once_with(
+            [
+                "uv",
+                "tool",
+                "install",
+                f"{core.UV_TOOL_NAME}==0.52.3",
+                "--upgrade",
+            ]
+        )
+        argv = run_checked.call_args.args[0]
+        self.assertNotIn("--from", argv)
+        for forcing_option in core.UV_TOOL_FORCE_UPGRADE_OPTIONS:
+            self.assertNotIn(forcing_option, argv)
+
+    ## @brief Verify the unpinned fallback when latest PyPI resolution fails (REQ-001).
+    # @details A failed PyPI metadata resolution keeps the previous unpinned
+    #          resolver argv so the self-upgrade still installs the latest release
+    #          resolved by uv instead of aborting the management command.
+    # @param self {UpdateCheckTest} Isolated test instance.
+    # @return {None} Assert the REQ-001 unpinned fallback install argv.
+    def test_upgrade_self_pypi_argv_falls_back_when_latest_resolution_fails(self):
+        # REQ-001: unresolved latest version keeps the unpinned requirement.
+        with mock.patch.object(
+            core, "_fetch_pypi_latest_version", return_value=None
+        ):
+            with mock.patch.object(core, "_is_linux_platform", return_value=True):
+                with mock.patch.object(core, "_run_checked") as run_checked:
+                    core.upgrade_self(Path("/repo"))
         run_checked.assert_called_once_with(
             [
                 "uv",
@@ -354,10 +388,6 @@ class UpdateCheckTest(unittest.TestCase):
                 "--upgrade",
             ]
         )
-        argv = run_checked.call_args.args[0]
-        self.assertNotIn("--from", argv)
-        for forcing_option in core.UV_TOOL_FORCE_UPGRADE_OPTIONS:
-            self.assertNotIn(forcing_option, argv)
 
     ## @brief Verify `--upgrade --force` appends the uv forcing options (REQ-236).
     # @details Mock the platform and subprocess boundaries; assert the PyPI
