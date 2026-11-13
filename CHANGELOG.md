@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.52.4](https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.4) - 2026-11-13
+## [0.52.5](https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.5) - 2026-11-13
 ### ⛰️  Features
 - Update gitalias config.
 - add clean.sh removing all build.sh artifacts [useReq] *(scripts)*
@@ -11,6 +11,8 @@
   scripts/build.sh --clean now delegates to scripts/clean.sh (REQ-286).; pre-release-check cleanup uses scripts/clean.sh (REQ-226, REQ-288).; Added tests/test_clean_script.py suite; 504 tests pass.; Updated WORKFLOW.md with the PROC:clean-sh unit and its edges.
 
 ### 🐛  Bug Fixes
+- Pin latest PyPI release on self-upgrade [useReq] *(upgrade)*
+  Resolve the latest PyPI version before the unforced self-upgrade.\n- Pin the requirement as galias==<latest> so a differently sourced or\n  newer installed release is replaced by the PyPI publication.\n- Fall back to the unpinned requirement with --upgrade when resolution\n  fails.\n- Add the reproducer tests and refresh REFERENCES.md and WORKFLOW.md.
 - Re-resolve latest PyPI release on self-upgrade [useReq] *(upgrade)*
   Append the uv resolver option '--upgrade' to the default PyPI self-upgrade argv: plain 'uv tool install galias' reuses an already-installed release that satisfies the recorded unpinned requirement, so '--upgrade' reported a successful install while the installed version stayed 0.52.1 (REQ-001). The REQ-236 forced argv and the REQ-209 tag-pinned GitHub argv stay unchanged.
   Add a reproducer unit test for the latest-release install argv and refresh WORKFLOW.md and REFERENCES.md.
@@ -1036,7 +1038,7 @@
 - \[0.50.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.50.0
 - \[0.51.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.51.0
 - \[0.52.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.0
-- \[0.52.4\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.4
+- \[0.52.5\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.5
 
 [0.1.0]: https://github.com/Ogekuri/GAlias/releases/tag/v0.1.0
 [0.2.0]: https://github.com/Ogekuri/GAlias/compare/v0.1.0..v0.2.0
@@ -1090,4 +1092,4 @@
 [0.50.0]: https://github.com/Ogekuri/GAlias/compare/v0.49.0..v0.50.0
 [0.51.0]: https://github.com/Ogekuri/GAlias/compare/v0.50.0..v0.51.0
 [0.52.0]: https://github.com/Ogekuri/GAlias/compare/v0.51.0..v0.52.0
-[0.52.4]: https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.4
+[0.52.5]: https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.5
