@@ -6094,7 +6094,7 @@ def main(argv=None, *, check_updates: bool = True):
             file=sys.stderr,
         )
         sys.exit(1)
-    if "--force" in args and args[0] != "--upgrade":
+    if args[0] == "--force":
         print(
             "Option '--force' is supported only with '--upgrade'.",
             file=sys.stderr,

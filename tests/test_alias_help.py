@@ -279,9 +279,42 @@ class AliasHelpTest(unittest.TestCase):
         code, _, err = self.run_script_result(["--force"], check=False)
         self.assertNotEqual(code, 0)
         self.assertIn("supported only with '--upgrade'", err)
-        code, _, err = self.run_script_result(["--ver", "--force"], check=False)
+        code, _, err = self.run_script_result(["--force", "--upgrade"], check=False)
         self.assertNotEqual(code, 0)
         self.assertIn("supported only with '--upgrade'", err)
+
+    ## @brief Verify commands owning a `--force` operand contract are not intercepted by the upgrade gate (REQ-238, REQ-019, REQ-074, REQ-077).
+    # @details Regression reproducer: the REQ-238 gate rejects `--force` only
+    #          as the first CLI token; `bd`, `wt`, and `wtd` accept `--force`
+    #          inside their own operand grammar, so dispatch must reach their
+    #          handlers with the flag forwarded inside the extras.
+    # @param self {AliasHelpTest} Isolated test instance.
+    # @return {None} Assert each handler receives the full extras including `--force`.
+    def test_force_flag_reaches_command_handlers_with_own_force_contracts(self):
+        for command in ("bd", "wt", "wtd"):
+            with self.subTest(command=command):
+                handler = mock.MagicMock()
+                with mock.patch.dict(core.COMMANDS, {command: handler}):
+                    code, _, err = self.run_script_result(
+                        [command, "--force", "target"], check=True
+                    )
+                self.assertEqual(code, 0)
+                self.assertNotIn("supported only with '--upgrade'", err)
+                handler.assert_called_once_with(["--force", "target"])
+
+    ## @brief Verify a trailing `--force` on `wtd` reaches the operand parser (REQ-077, REQ-238).
+    # @details `wtd` accepts one leading `--force` only; a trailing occurrence
+    #          must produce the command-specific usage diagnostic instead of
+    #          the management-option rejection, proving the gate did not fire.
+    # @param self {AliasHelpTest} Isolated test instance.
+    # @return {None} Assert the usage error and the absence of the gate diagnostic.
+    def test_wtd_trailing_force_flag_reports_usage_error(self):
+        code, _, err = self.run_script_result(
+            ["wtd", "target", "--force"], check=False
+        )
+        self.assertNotEqual(code, 0)
+        self.assertIn("git wtd requires exactly one worktree", err)
+        self.assertNotIn("supported only with '--upgrade'", err)
 
     ## @brief Verify release commands accept --dev/--develop through main (REQ-200, REQ-203).
     # @details The dispatcher must not reject the release-scope flags; mock
