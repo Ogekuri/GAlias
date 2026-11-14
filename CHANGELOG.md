@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.52.5](https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.5) - 2026-11-13
+## [0.52.6](https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.6) - 2026-11-14
 ### ⛰️  Features
 - Update gitalias config.
 - add clean.sh removing all build.sh artifacts [useReq] *(scripts)*
@@ -11,6 +11,15 @@
   scripts/build.sh --clean now delegates to scripts/clean.sh (REQ-286).; pre-release-check cleanup uses scripts/clean.sh (REQ-226, REQ-288).; Added tests/test_clean_script.py suite; 504 tests pass.; Updated WORKFLOW.md with the PROC:clean-sh unit and its edges.
 
 ### 🐛  Bug Fixes
+- scope --force rejection to the first CLI token [useReq] *(core)*
+  The --upgrade gate rejected --force anywhere in argv, breaking every
+  command whose grammar owns the flag (bd, wtd, wt passthrough, git
+  forwarding aliases) and mislabeling trailing --force on wtd as a
+  management-option error.
+  main() now rejects --force only as the first CLI token per REQ-238; bd/wtd enforce their own leading-only --force contract (REQ-019,
+  REQ-077); --ver --force reaches its REQ-030 reporting contract
+  reproducer tests cover gate passthrough for bd/wt/wtd, the trailing
+  wtd usage error, and preserved first-token rejection
 - Pin latest PyPI release on self-upgrade [useReq] *(upgrade)*
   Resolve the latest PyPI version before the unforced self-upgrade.\n- Pin the requirement as galias==<latest> so a differently sourced or\n  newer installed release is replaced by the PyPI publication.\n- Fall back to the unpinned requirement with --upgrade when resolution\n  fails.\n- Add the reproducer tests and refresh REFERENCES.md and WORKFLOW.md.
 - Re-resolve latest PyPI release on self-upgrade [useReq] *(upgrade)*
@@ -1038,7 +1047,7 @@
 - \[0.50.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.50.0
 - \[0.51.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.51.0
 - \[0.52.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.0
-- \[0.52.5\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.5
+- \[0.52.6\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.6
 
 [0.1.0]: https://github.com/Ogekuri/GAlias/releases/tag/v0.1.0
 [0.2.0]: https://github.com/Ogekuri/GAlias/compare/v0.1.0..v0.2.0
@@ -1092,4 +1101,4 @@
 [0.50.0]: https://github.com/Ogekuri/GAlias/compare/v0.49.0..v0.50.0
 [0.51.0]: https://github.com/Ogekuri/GAlias/compare/v0.50.0..v0.51.0
 [0.52.0]: https://github.com/Ogekuri/GAlias/compare/v0.51.0..v0.52.0
-[0.52.5]: https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.5
+[0.52.6]: https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.6
