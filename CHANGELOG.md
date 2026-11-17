@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.52.6](https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.6) - 2026-11-14
+## [0.52.7](https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.7) - 2026-11-17
 ### ⛰️  Features
 - Update gitalias config.
 - add clean.sh removing all build.sh artifacts [useReq] *(scripts)*
@@ -11,6 +11,8 @@
   scripts/build.sh --clean now delegates to scripts/clean.sh (REQ-286).; pre-release-check cleanup uses scripts/clean.sh (REQ-226, REQ-288).; Added tests/test_clean_script.py suite; 504 tests pass.; Updated WORKFLOW.md with the PROC:clean-sh unit and its edges.
 
 ### 🐛  Bug Fixes
+- exit with explicit error when the CWD is unreadable [useReq] *(core)*
+  get_git_root caught the git rev-parse failure but its Path.cwd() fallback escaped a raw FileNotFoundError traceback from main for every command (dcc, dc, dccc, and all other aliases) whenever the current working directory had been deleted, e.g. a removed worktree. The fallback now prints an explicit English diagnostic and exits with status 1 (DES-002), so all commands share a single safe resolution path. Add reproducer unit tests covering get_git_root and the main(['dcc']) entrypoint, update WORKFLOW.md call-trace nodes and regenerate REFERENCES.md.
 - scope --force rejection to the first CLI token [useReq] *(core)*
   The --upgrade gate rejected --force anywhere in argv, breaking every
   command whose grammar owns the flag (bd, wtd, wt passthrough, git
@@ -1047,7 +1049,7 @@
 - \[0.50.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.50.0
 - \[0.51.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.51.0
 - \[0.52.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.0
-- \[0.52.6\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.6
+- \[0.52.7\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.7
 
 [0.1.0]: https://github.com/Ogekuri/GAlias/releases/tag/v0.1.0
 [0.2.0]: https://github.com/Ogekuri/GAlias/compare/v0.1.0..v0.2.0
@@ -1101,4 +1103,4 @@
 [0.50.0]: https://github.com/Ogekuri/GAlias/compare/v0.49.0..v0.50.0
 [0.51.0]: https://github.com/Ogekuri/GAlias/compare/v0.50.0..v0.51.0
 [0.52.0]: https://github.com/Ogekuri/GAlias/compare/v0.51.0..v0.52.0
-[0.52.6]: https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.6
+[0.52.7]: https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.7
