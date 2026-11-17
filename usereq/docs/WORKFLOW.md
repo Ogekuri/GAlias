@@ -121,7 +121,7 @@
 - Internal Call-Trace Tree:
   - `__main__::<module_guard>(...)`: bridge from module execution to CLI dispatcher [`src/git_alias/__main__.py`]
     - `main(...)`: load config, optionally run update checks, route management commands, and dispatch alias handlers [`src/git_alias/core.py`]
-      - `get_git_root(...)`: resolve repository root [`src/git_alias/core.py`]
+      - `get_git_root(...)`: resolve repository root or the current-directory fallback, exiting with an explicit English error and status 1 when the current working directory cannot be read [`src/git_alias/core.py`]
       - `load_cli_config(...)`: load repository and global configuration scopes [`src/git_alias/core.py`]
       - `check_for_newer_version(...)`: perform cached PyPI JSON API version check when enabled and return the latest PyPI version text for reporting [`src/git_alias/core.py`]
       - `_fetch_github_latest_version(...)`: fetch the latest GitHub release version and return the normalized version text with the intercepted failure reason for `--ver`/`--version` dual-source reporting and the REQ-241-aligned `Latest @ GitHub` `unknown (<reason>)` degradation [`src/git_alias/core.py`]
@@ -201,7 +201,7 @@
               - External boundary: `git difftool` launches the `--extcmd` diff tool as its own child process.
         - `cmd_rollback(...)`: validate clean state and reachable target, run the release-style version pre-flight check, apply `git revert --no-commit`, restore the stored application version, stage restored files, and create the non-amend revert commit [`src/git_alias/core.py`]
           - `get_version_rules(...)`: read active `ver_rules` required by the version pre-flight check [`src/git_alias/core.py`]
-          - `get_git_root(...)`: resolve repository root for version detection [`src/git_alias/core.py`]
+          - `get_git_root(...)`: resolve repository root or the current-directory fallback, exiting with an explicit English error when the current working directory cannot be read [`src/git_alias/core.py`]
           - `_determine_canonical_version(...)`: detect and store the pre-rollback application version [`src/git_alias/core.py`]
           - `_abort_rollback_version_restore(...)`: execute `git revert --abort` and exit non-zero when the version restore fails [`src/git_alias/core.py`]
           - `cmd_chver(...)`: restore the stored application version across version-managed files before the revert commit [`src/git_alias/core.py`]
@@ -221,7 +221,7 @@
               - `_current_branch_name(...)`: require a configured release-branch checkout [`src/git_alias/core.py`]
               - `_extract_release_version(...)` and `_parse_semver_tuple(...)`: derive and classify the prepared release version [`src/git_alias/core.py`]
               - `_determine_canonical_version(...)`: confirm version files match the release commit [`src/git_alias/core.py`]
-                - `get_git_root(...)` and `get_version_rules(...)`: resolve version-rule inputs [`src/git_alias/core.py`]
+                - `get_git_root(...)` and `get_version_rules(...)`: resolve version-rule inputs; `get_git_root(...)` exits with an explicit English error when the current working directory cannot be read [`src/git_alias/core.py`]
               - `_is_commit_ancestor(...)`: require remote tips ancestral to the release commit [`src/git_alias/core.py`]
               - `_run_release_step(...)`: wrap each publication step with release diagnostics [`src/git_alias/core.py`]
                 - `_push_release_refs(...)`: publish only missing branch/tag updates once [`src/git_alias/core.py`]

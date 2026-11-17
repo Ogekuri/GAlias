@@ -804,9 +804,22 @@ def _fetch_github_latest_version(
     return latest_text, None
 
 
-## @brief Execute `get_git_root` runtime logic for Git-Alias CLI.
-# @details Executes `get_git_root` using deterministic CLI control-flow and explicit error propagation.
-# @return Result emitted by `get_git_root` according to command contract.
+## @brief Resolve the repository root or the current-directory fallback.
+# @details Runs `git rev-parse --show-toplevel` through `_run_checked` and
+# returns the reported toplevel when the command succeeds; otherwise falls
+# back to the process working directory so configuration resolution keeps
+# working outside repositories (REQ-255). When the working directory cannot
+# be read (deleted or inaccessible CWD, e.g. a removed worktree), prints an
+# explicit English diagnostic to stderr and terminates with status 1 so no
+# raw Python traceback escapes the CLI entrypoint (DES-002). Every command
+# shares this resolution path through `main`, so the explicit-error contract
+# covers all aliases uniformly.
+# @return {Path} Absolute repository toplevel path, or the current working
+# directory when no repository is detectable.
+# @exception SystemExit Exit code 1 when `os.getcwd()` fails with an
+# `OSError` (unreadable or deleted current working directory).
+# @note Complexity: O(1) plus one `git rev-parse` subprocess.
+# @satisfies DES-001, DES-002, DES-008, PRJ-001, REQ-031, REQ-037, REQ-255
 def get_git_root():
     try:
         result = _run_checked(
@@ -820,7 +833,15 @@ def get_git_root():
             return Path(location)
     except CommandExecutionError:
         pass
-    return Path.cwd()
+    try:
+        return Path.cwd()
+    except OSError as exc:
+        print(f"Unable to read the current working directory: {exc}", file=sys.stderr)
+        print(
+            "Change to an existing directory and retry the command.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
 
 
 ## @brief Execute `get_config_path` runtime logic for Git-Alias CLI.
