@@ -1,7 +1,18 @@
 # Changelog
 
-## [0.52.9](https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.9) - 2026-11-20
+## [0.52.10](https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.10) - 2026-11-20
 ### ⛰️  Features
+- print updated version-file list on version changes [useReq] *(chver)*
+  Added REQ-337 and REQ-338 to the SRS (version 1.65): chver must print
+  an 'Updated files:' list with one repository-relative line per rewritten
+  version-managed file after the completion line, and the major/minor/patch
+  version-update step plus the rollback version-restore step print the same
+  list through the shared chver flow.
+  cmd_chver now collects every rewritten file (via the per-rule relative
+  path map) and prints the list on success; no-op, zero-rewrite, and
+  failure paths print no list.
+  Added three unit tests in tests/test_ver_command.py covering the happy
+  list, per-file membership, and the already-current no-op boundary.
 - Update gitalias config.
 - add clean.sh removing all build.sh artifacts [useReq] *(scripts)*
   Introduce scripts/clean.sh as the dedicated, cwd-independent cleanup entry
@@ -1066,7 +1077,7 @@
 - \[0.50.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.50.0
 - \[0.51.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.51.0
 - \[0.52.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.0
-- \[0.52.9\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.9
+- \[0.52.10\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.10
 
 [0.1.0]: https://github.com/Ogekuri/GAlias/releases/tag/v0.1.0
 [0.2.0]: https://github.com/Ogekuri/GAlias/compare/v0.1.0..v0.2.0
@@ -1120,4 +1131,4 @@
 [0.50.0]: https://github.com/Ogekuri/GAlias/compare/v0.49.0..v0.50.0
 [0.51.0]: https://github.com/Ogekuri/GAlias/compare/v0.50.0..v0.51.0
 [0.52.0]: https://github.com/Ogekuri/GAlias/compare/v0.51.0..v0.52.0
-[0.52.9]: https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.9
+[0.52.10]: https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.10
