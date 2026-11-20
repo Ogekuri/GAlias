@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.52.8](https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.8) - 2026-11-20
+## [0.52.9](https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.9) - 2026-11-20
 ### ⛰️  Features
 - Update gitalias config.
 - add clean.sh removing all build.sh artifacts [useReq] *(scripts)*
@@ -36,6 +36,19 @@
   no-residual-Bash-message assertions; update WORKFLOW.md call-trace.
 
 ### 🚜  Changes
+- run pre-build checks before any repository mutation [useReq] *(release)*
+  REQ-319 amended: the configured pre_release_check script now executes
+  as the first release-flow operation of major/minor/patch, before the
+  release-prerequisites gate and the version update, so the checks run
+  on a repository that galias has not modified in any way.
+  Added REQ-334, REQ-335, REQ-336: every pre-build check completes
+  before the first release mutation, no staging, commit, tag, merge,
+  push, or version-file write occurs before the checks pass, and any
+  pre-build-check failure terminates non-zero leaving the repository
+  unmodified.
+  Reordered _execute_release_flow and extended release-flow tests with
+  pre-build ordering and gate-failure abort coverage.
+  [useReq] SRS 1.64; updated REQUIREMENTS.md, WORKFLOW.md, REFERENCES.md
 - wrap long commit bodies at console width [useReq] *(ll)*
   The ll log format now embeds %w(<width>,0,0) immediately before the body placeholder so commit body lines longer than the console width hard-wrap while git --graph re-emits the lane prefix and its colors on every continuation line; header and subject rendering stays unwrapped (REQ-330, REQ-331, REQ-332). The new --no-wrap operand disables body wrapping and is omitted from the forwarded git arguments (REQ-333). Width resolution added via _resolve_ll_wrap_width and LL_GRAPH_PREFIX_RESERVE; ll inline help updated; SRS bumped to 1.63 and REFERENCES.md regenerated.
 - print complete commit bodies for multi-line messages [useReq] *(ll)*
@@ -1053,7 +1066,7 @@
 - \[0.50.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.50.0
 - \[0.51.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.51.0
 - \[0.52.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.0
-- \[0.52.8\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.8
+- \[0.52.9\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.9
 
 [0.1.0]: https://github.com/Ogekuri/GAlias/releases/tag/v0.1.0
 [0.2.0]: https://github.com/Ogekuri/GAlias/compare/v0.1.0..v0.2.0
@@ -1107,4 +1120,4 @@
 [0.50.0]: https://github.com/Ogekuri/GAlias/compare/v0.49.0..v0.50.0
 [0.51.0]: https://github.com/Ogekuri/GAlias/compare/v0.50.0..v0.51.0
 [0.52.0]: https://github.com/Ogekuri/GAlias/compare/v0.51.0..v0.52.0
-[0.52.8]: https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.8
+[0.52.9]: https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.9
