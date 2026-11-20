@@ -1139,18 +1139,18 @@ HELP_TEXTS = {
     "lt": "Print tags with containing branches.",
     "major": "Release a new major version from the work branch. Options: --include-patch, --dev/--develop (limit the release to the configured develop branch: merge work into develop, tag there, and atomically push develop with the release tag only; master stays unchanged), build_script and pre_release_check (local .galias.conf keys: build_script runs after the version update and before the release commit; pre_release_check runs first; both abort the release on a non-zero exit and are skipped when empty). Alternatively use --resume alone or with --dev/--develop to validate and publish an already prepared local release without bumping, amending, or recreating its tag; completed publication is a no-op. Note: here --dev/--develop mean develop-scoped release, not the --upgrade GitHub-install option.",
     "minor": "Release a new minor version from the work branch. Options: --include-patch, --dev/--develop (limit the release to the configured develop branch: merge work into develop, tag there, and atomically push develop with the release tag only; master stays unchanged), build_script and pre_release_check (local .galias.conf keys: build_script runs after the version update and before the release commit; pre_release_check runs first; both abort the release on a non-zero exit and are skipped when empty). Alternatively use --resume alone or with --dev/--develop to validate and publish an already prepared local release without bumping, amending, or recreating its tag; completed publication is a no-op. Note: here --dev/--develop mean develop-scoped release, not the --upgrade GitHub-install option.",
-    "new": "Conventional commit new(<module>): <description>. Input: '<module>: <description>' or '<description>' (uses default_commit_module).",
+    "new": "Conventional commit new(<module>): <description>. Input: '(<module>) <description>', '(<module>)!: <description>', '<module>: <description>', or '<description>' (uses default_commit_module; '!' marks a breaking change).",
     "o": "Print a verbose overview with status, branch distances, active worktrees, and a qualitative ASCII topology tree.",
-    "implement": "Conventional commit implement(<module>): <description>. Input: '<module>: <description>' or '<description>' (uses default_commit_module).",
-    "refactor": "Conventional commit refactor(<module>): <description>. Input: '<module>: <description>' or '<description>' (uses default_commit_module).",
-    "fix": "Conventional commit fix(<module>): <description>. Input: '<module>: <description>' or '<description>' (uses default_commit_module).",
-    "change": "Conventional commit change(<module>): <description>. Input: '<module>: <description>' or '<description>' (uses default_commit_module).",
-    "docs": "Conventional commit docs(<module>): <description>. Input: '<module>: <description>' or '<description>' (uses default_commit_module).",
-    "style": "Conventional commit style(<module>): <description>. Input: '<module>: <description>' or '<description>' (uses default_commit_module).",
-    "revert": "Conventional commit revert(<module>): <description>. Input: '<module>: <description>' or '<description>' (uses default_commit_module).",
+    "implement": "Conventional commit implement(<module>): <description>. Input: '(<module>) <description>', '(<module>)!: <description>', '<module>: <description>', or '<description>' (uses default_commit_module; '!' marks a breaking change).",
+    "refactor": "Conventional commit refactor(<module>): <description>. Input: '(<module>) <description>', '(<module>)!: <description>', '<module>: <description>', or '<description>' (uses default_commit_module; '!' marks a breaking change).",
+    "fix": "Conventional commit fix(<module>): <description>. Input: '(<module>) <description>', '(<module>)!: <description>', '<module>: <description>', or '<description>' (uses default_commit_module; '!' marks a breaking change).",
+    "change": "Conventional commit change(<module>): <description>. Input: '(<module>) <description>', '(<module>)!: <description>', '<module>: <description>', or '<description>' (uses default_commit_module; '!' marks a breaking change).",
+    "docs": "Conventional commit docs(<module>): <description>. Input: '(<module>) <description>', '(<module>)!: <description>', '<module>: <description>', or '<description>' (uses default_commit_module; '!' marks a breaking change).",
+    "style": "Conventional commit style(<module>): <description>. Input: '(<module>) <description>', '(<module>)!: <description>', '<module>: <description>', or '<description>' (uses default_commit_module; '!' marks a breaking change).",
+    "revert": "Conventional commit revert(<module>): <description>. Input: '(<module>) <description>', '(<module>)!: <description>', '<module>: <description>', or '<description>' (uses default_commit_module; '!' marks a breaking change).",
     "rollback": "Create rollback commit to a target commit or tag on current branch, preserving the current application version (runs a version pre-check and restores the version via chver before committing). Syntax: git rollback <commit-hash|tag>.",
-    "misc": "Conventional commit misc(<module>): <description>. Input: '<module>: <description>' or '<description>' (uses default_commit_module).",
-    "cover": "Conventional commit cover(<module>): <description>. Input: '<module>: <description>' or '<description>' (uses default_commit_module).",
+    "misc": "Conventional commit misc(<module>): <description>. Input: '(<module>) <description>', '(<module>)!: <description>', '<module>: <description>', or '<description>' (uses default_commit_module; '!' marks a breaking change).",
+    "cover": "Conventional commit cover(<module>): <description>. Input: '(<module>) <description>', '(<module>)!: <description>', '<module>: <description>', or '<description>' (uses default_commit_module; '!' marks a breaking change).",
     "me": "Merge with fast-forward only (git merge --ff-only).",
     "pl": "Pull (fetch + merge FETCH_HEAD) from origin on current branch.",
     "pt": "Push all new tags to origin.",
@@ -1704,9 +1704,26 @@ _CONVENTIONAL_RE = re.compile(
     r"(?:\((?P<scope>[^)\r\n]+)\))?(?P<breaking>!)?:\s+(?P<desc>.+)$",
     re.IGNORECASE | re.DOTALL,
 )
-## @brief Constant `_MODULE_PREFIX_RE` used by CLI runtime paths and policies.
-
-_MODULE_PREFIX_RE = re.compile(r"^(?P<module>[A-Za-z0-9_]+):\s*(?P<body>.*)$")
+## @brief Constant `_MODULE_SPEC_RE` used by CLI runtime paths and policies.
+# @details Compiled once; matches the conventional-alias module specifier prefix at the
+#          start of the joined operand text. Alternatives are evaluated in order:
+#          1. Parenthesized form: `(<module>)` or `(<module>)!` followed by a colon
+#             separator (`\s*:\s*`) or a whitespace separator (`\s+`) (REQ-339, REQ-340).
+#          2. Bare prefix form: `<module>:` or `<module>!:` (REQ-115, REQ-340).
+#          3. Leading breaking marker without module: `!` or `!:` (REQ-341).
+#          Named groups expose the specifier kind (`paren_*`, `bare_*`, `marker_*`),
+#          the optional `!` breaking flag, and the description body. `re.DOTALL` lets
+#          the body span multiple lines, matching `_CONVENTIONAL_RE` description handling.
+_MODULE_SPEC_RE = re.compile(
+    r"^(?:"
+    r"\((?P<paren_module>[A-Za-z0-9_]+)\)(?P<paren_breaking>!)?(?:\s*:\s*|\s+)(?P<paren_body>.*)"
+    r"|"
+    r"(?P<bare_module>[A-Za-z0-9_]+)(?P<bare_breaking>!)?\s*:\s*(?P<bare_body>.*)"
+    r"|"
+    r"(?P<marker_breaking>!)(?:\s*:\s*|\s+)(?P<marker_body>.*)"
+    r")$",
+    re.DOTALL,
+)
 ## @brief Constant `_SEMVER_TAG_RE` used by CLI runtime paths and policies.
 
 _SEMVER_TAG_RE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
@@ -3506,24 +3523,44 @@ def _normalize_conventional_description(description: str) -> str:
     return text
 
 
-## @brief Execute `_build_conventional_message` runtime logic for Git-Alias CLI.
-# @details Executes `_build_conventional_message` using deterministic CLI control-flow and explicit error propagation.
-#          The output format is `<type>: <description>` when the effective module is empty,
-#          otherwise `<type>(<module>): <description>`.
-# @param kind Input parameter consumed by `_build_conventional_message`.
-# @param extra Input parameter consumed by `_build_conventional_message`.
-# @param alias Input parameter consumed by `_build_conventional_message`.
-# @return Result emitted by `_build_conventional_message` according to command contract.
+## @brief Build the canonical conventional commit subject for an alias invocation.
+# @details Resolves the module specifier and breaking marker from the joined operand text
+#          via `_MODULE_SPEC_RE`, then constructs `<type>(<module>): <description>` or
+#          `<type>: <description>` (REQ-115, REQ-116, REQ-339). A resolved `!` breaking
+#          marker is emitted after the effective scope: `<type>(<module>)!: <description>`
+#          or `<type>!: <description>` (REQ-340, REQ-341). Specifier precedence:
+#          parenthesized `(<module>)`, bare `<module>:` prefix, leading `!` marker;
+#          unmatched text uses the `default_commit_module` configuration value and no marker.
+#          The description is normalized by `_normalize_conventional_description` (REQ-117).
+# @param kind `str` — conventional commit type token (e.g., `"fix"`, `"new"`).
+# @param extra `list | None` — raw CLI extra operands forwarded to `_prepare_commit_message`.
+# @param alias `str` — alias name used in error messages and help dispatch.
+# @return `str` — canonical conventional commit subject with the normalized description.
+# @exception SystemExit Exit code 1 when operands are empty or the specifier body is empty.
+# @satisfies REQ-022, REQ-115, REQ-116, REQ-117, REQ-339, REQ-340, REQ-341
+# @see _prepare_commit_message, _normalize_conventional_description, get_config_value, _run_conventional_commit
 def _build_conventional_message(kind: str, extra, alias: str) -> str:
     text = _prepare_commit_message(extra, alias).strip()
-    match = _MODULE_PREFIX_RE.match(text)
+    match = _MODULE_SPEC_RE.match(text)
     if match:
-        scope = match.group("module")
-        body = match.group("body").strip()
+        if match.group("paren_module") is not None:
+            scope = match.group("paren_module")
+            breaking = bool(match.group("paren_breaking"))
+            body = match.group("paren_body")
+        elif match.group("bare_module") is not None:
+            scope = match.group("bare_module")
+            breaking = bool(match.group("bare_breaking"))
+            body = match.group("bare_body")
+        else:
+            scope = get_config_value("default_commit_module")
+            breaking = True
+            body = match.group("marker_body")
     else:
         scope = get_config_value("default_commit_module")
+        breaking = False
         body = text
     scope = scope.strip() if isinstance(scope, str) else ""
+    body = body.strip()
     if not body:
         print(
             f"git {alias} requires text after the '<module>:' prefix to complete the message.",
@@ -3531,9 +3568,10 @@ def _build_conventional_message(kind: str, extra, alias: str) -> str:
         )
         sys.exit(1)
     body = _normalize_conventional_description(body)
+    marker = "!" if breaking else ""
     if scope:
-        return f"{kind}({scope}): {body}"
-    return f"{kind}: {body}"
+        return f"{kind}({scope}){marker}: {body}"
+    return f"{kind}{marker}: {body}"
 
 
 ## @brief Execute `_run_conventional_commit` runtime logic for Git-Alias CLI.

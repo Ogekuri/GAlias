@@ -81,6 +81,83 @@ class ConventionalCommitAliasesTest(unittest.TestCase):
             core.cmd_style(["ui:", "Already done."])
         execute.assert_called_once_with("style(ui): Already done.", "style")
 
+    def test_new_parenthesized_module_with_space_matches_colon_output(self):
+        # REQ-339: '(<module>) <description>' constructs the canonical
+        # '<type>(<module>): <description>' subject.
+        # Arrange/Act: parenthesized module separated from the description by whitespace.
+        expected_output = "new(core): Cleanup pipeline."
+        with (
+            mock.patch.object(core, "_ensure_commit_ready_with_stage"),
+            mock.patch.object(core, "_execute_commit", return_value=None) as execute,
+        ):
+            core.cmd_new(["(core)", "cleanup", "pipeline"])
+        # Assert: canonical subject with colon separator and normalized description.
+        execute.assert_called_once_with(expected_output, "new")
+
+    def test_fix_parenthesized_module_with_colon_is_equivalent(self):
+        # REQ-339: '(<module>): <description>' constructs the same canonical
+        # subject as the whitespace-separated parenthesized form.
+        expected_output = "fix(api): Fix login bug."
+        with (
+            mock.patch.object(core, "_ensure_commit_ready_with_stage"),
+            mock.patch.object(core, "_execute_commit", return_value=None) as execute,
+        ):
+            core.cmd_fix(["(api):", "Fix", "login", "bug"])
+        execute.assert_called_once_with(expected_output, "fix")
+
+    def test_docs_parenthesized_breaking_colon_marks_breaking(self):
+        # REQ-340: '(<module>)!: <description>' emits the '!' marker after the scope.
+        expected_output = "docs(api)!: Rewrite guide."
+        with (
+            mock.patch.object(core, "_ensure_commit_ready_with_stage"),
+            mock.patch.object(core, "_execute_commit", return_value=None) as execute,
+        ):
+            core.cmd_docs(["(api)!:", "Rewrite", "guide"])
+        execute.assert_called_once_with(expected_output, "docs")
+
+    def test_style_parenthesized_breaking_space_marks_breaking(self):
+        # REQ-340: '(<module>)! <description>' emits the '!' marker after the scope.
+        expected_output = "style(ui)!: Reindent sources."
+        with (
+            mock.patch.object(core, "_ensure_commit_ready_with_stage"),
+            mock.patch.object(core, "_execute_commit", return_value=None) as execute,
+        ):
+            core.cmd_style(["(ui)!", "Reindent", "sources"])
+        execute.assert_called_once_with(expected_output, "style")
+
+    def test_refactor_bare_module_breaking_prefix_marks_breaking(self):
+        # REQ-340: '<module>!: <description>' emits the '!' marker after the scope.
+        expected_output = "refactor(core)!: Split module."
+        with (
+            mock.patch.object(core, "_ensure_commit_ready_with_stage"),
+            mock.patch.object(core, "_execute_commit", return_value=None) as execute,
+        ):
+            core.cmd_refactor(["core!:", "Split", "module"])
+        execute.assert_called_once_with(expected_output, "refactor")
+
+    def test_change_leading_breaking_marker_resolves_default_module(self):
+        # REQ-341: leading '!' without module resolves default_commit_module
+        # and emits the marker after the effective scope.
+        core.CONFIG["default_commit_module"] = "ui"
+        expected_output = "change(ui)!: Reshape layout."
+        with (
+            mock.patch.object(core, "_ensure_commit_ready_with_stage"),
+            mock.patch.object(core, "_execute_commit", return_value=None) as execute,
+        ):
+            core.cmd_change(["!:", "Reshape", "layout"])
+        execute.assert_called_once_with(expected_output, "change")
+
+    def test_revert_leading_breaking_marker_without_module_omits_scope(self):
+        # REQ-341: leading '!' with an empty default module emits '<type>!: <description>'.
+        core.CONFIG["default_commit_module"] = ""
+        expected_output = "revert!: Restore state."
+        with (
+            mock.patch.object(core, "_ensure_commit_ready_with_stage"),
+            mock.patch.object(core, "_execute_commit", return_value=None) as execute,
+        ):
+            core.cmd_revert(["!", "Restore", "state"])
+        execute.assert_called_once_with(expected_output, "revert")
+
     def test_missing_message_raises_error(self):
         with mock.patch.object(core, "_ensure_commit_ready_with_stage"):
             err = io.StringIO()

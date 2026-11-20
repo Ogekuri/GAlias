@@ -141,6 +141,15 @@ class AliasHelpTest(unittest.TestCase):
             self.assertIn("<module>: <description>", output, msg=f"{alias} help missing module prefix syntax")
             self.assertIn("default_commit_module", output, msg=f"{alias} help missing default module fallback")
 
+    def test_conventional_alias_help_documents_breaking_marker(self):
+        # REQ-342: per-command help documents the parenthesized module syntax
+        # and the '!' breaking-change marker for every conventional alias.
+        aliases = ["new", "fix", "change", "implement", "refactor", "docs", "style", "revert", "misc", "cover"]
+        for alias in aliases:
+            output = self.run_script([alias, "--help"])
+            self.assertIn("(<module>)", output, msg=f"{alias} help missing parenthesized module syntax")
+            self.assertIn("'!' marks a breaking change", output, msg=f"{alias} help missing breaking-change marker documentation")
+
     def test_usage_includes_version_when_no_args(self):
         code, stdout, _ = self.run_script_result([], check=False)
         self.assertNotEqual(code, 0)

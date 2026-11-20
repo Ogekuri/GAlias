@@ -199,6 +199,16 @@
               - `_validated_config_command_parts(...)`: validate the selected diff tool argv [`src/git_alias/core.py`]
             - `run_command(...)`: spawn `git difftool` through the shared subprocess wrapper [`src/git_alias/core.py`]
               - External boundary: `git difftool` launches the `--extcmd` diff tool as its own child process.
+        - `cmd_new(...)`, `cmd_fix(...)`, `cmd_change(...)`, `cmd_implement(...)`, `cmd_refactor(...)`, `cmd_docs(...)`, `cmd_style(...)`, `cmd_revert(...)`, `cmd_misc(...)`, and `cmd_cover(...)`: conventional commit aliases building the canonical subject from the module specifier forms `(<module>) <description>`, `(<module>): <description>`, and `<module>: <description>` plus the `!` breaking marker (REQ-339, REQ-340, REQ-341) [`src/git_alias/core.py`]
+          - `_run_conventional_commit(...)`: build the conventional subject, validate commit readiness with auto-staging, and execute the commit with WIP-amend semantics [`src/git_alias/core.py`]
+            - `_build_conventional_message(...)`: parse the module specifier (parenthesized `(<module>)`, bare `<module>:` prefix, or leading `!` marker) via `_MODULE_SPEC_RE`, resolve the omitted module from `default_commit_module`, and construct the canonical `<type>(<module>)!:`, `<type>(<module>):`, `<type>!:`, or `<type>:` subject [`src/git_alias/core.py`]
+              - `_prepare_commit_message(...)`: join extra operands into the raw message text, require non-empty commit text, and honor `--help` [`src/git_alias/core.py`]
+              - `get_config_value(...)`: read the `default_commit_module` fallback module [`src/git_alias/core.py`]
+              - `_normalize_conventional_description(...)`: uppercase the first description character unless numeric and append the missing trailing period [`src/git_alias/core.py`]
+            - `_ensure_commit_ready_with_stage(...)`: require staged or dirty data, exit non-zero when both are empty, and auto-stage via `cmd_aa(...)` when staging is empty [`src/git_alias/core.py`]
+              - `cmd_aa(...)`: stage all pending changes through `git add --all` [`src/git_alias/core.py`]
+            - `_execute_commit(...)`: decide WIP amend via `_should_amend_existing_commit(...)`, print the amend/new-commit reason, and run `git commit` (with `--amend` when amending) through `run_git_cmd(...)` [`src/git_alias/core.py`]
+              - External boundary: `git commit` runs as its own child process with the message piped via stdin.
         - `cmd_rollback(...)`: validate clean state and reachable target, run the release-style version pre-flight check, apply `git revert --no-commit`, restore the stored application version, stage restored files, and create the non-amend revert commit [`src/git_alias/core.py`]
           - `get_version_rules(...)`: read active `ver_rules` required by the version pre-flight check [`src/git_alias/core.py`]
           - `get_git_root(...)`: resolve repository root or the current-directory fallback, exiting with an explicit English error when the current working directory cannot be read [`src/git_alias/core.py`]
