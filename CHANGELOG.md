@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.52.7](https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.7) - 2026-11-17
+## [0.52.8](https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.8) - 2026-11-20
 ### ⛰️  Features
 - Update gitalias config.
 - add clean.sh removing all build.sh artifacts [useReq] *(scripts)*
@@ -36,6 +36,10 @@
   no-residual-Bash-message assertions; update WORKFLOW.md call-trace.
 
 ### 🚜  Changes
+- wrap long commit bodies at console width [useReq] *(ll)*
+  The ll log format now embeds %w(<width>,0,0) immediately before the body placeholder so commit body lines longer than the console width hard-wrap while git --graph re-emits the lane prefix and its colors on every continuation line; header and subject rendering stays unwrapped (REQ-330, REQ-331, REQ-332). The new --no-wrap operand disables body wrapping and is omitted from the forwarded git arguments (REQ-333). Width resolution added via _resolve_ll_wrap_width and LL_GRAPH_PREFIX_RESERVE; ll inline help updated; SRS bumped to 1.63 and REFERENCES.md regenerated.
+- print complete commit bodies for multi-line messages [useReq] *(ll)*
+  The ll alias now appends the complete commit body after the subject line so multi-line commit comments are printed entirely; the %+b placeholder keeps single-line commits free of extra body sections while the graph, decorate, and full-hash log rendering stays unchanged (REQ-328, REQ-329). The ll inline help documents the complete-message rendering. Requirements SRS bumped to 1.62 with the new ll rendering contract and evidence entries; REFERENCES.md regenerated.
 - Verify dist/ cleanup of old versions before build [useReq] *(build-script)*
   Add REQ-327: default build.sh builds verify that no previous release artifact remains after the automatic dist/ cleanup and abort with the surviving artifact list.
   Implement verify_previous_artifacts_removed and run it between run_cleanup and uv build.
@@ -1049,7 +1053,7 @@
 - \[0.50.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.50.0
 - \[0.51.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.51.0
 - \[0.52.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.0
-- \[0.52.7\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.7
+- \[0.52.8\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.8
 
 [0.1.0]: https://github.com/Ogekuri/GAlias/releases/tag/v0.1.0
 [0.2.0]: https://github.com/Ogekuri/GAlias/compare/v0.1.0..v0.2.0
@@ -1103,4 +1107,4 @@
 [0.50.0]: https://github.com/Ogekuri/GAlias/compare/v0.49.0..v0.50.0
 [0.51.0]: https://github.com/Ogekuri/GAlias/compare/v0.50.0..v0.51.0
 [0.52.0]: https://github.com/Ogekuri/GAlias/compare/v0.51.0..v0.52.0
-[0.52.7]: https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.7
+[0.52.8]: https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.8
