@@ -1,7 +1,9 @@
 # Changelog
 
-## [0.52.10](https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.10) - 2026-11-20
+## [0.52.11](https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.11) - 2026-11-20
 ### ⛰️  Features
+- support parenthesized module specifier and breaking marker [useReq] *(conventional)*
+  Conventional aliases accept (<module>) <description> and (<module>): <description> inputs, both constructing the canonical (<module>): subject (REQ-339); the ! breaking marker is accepted after the module specifier and without a module (REQ-340, REQ-341); per-command help documents all accepted syntaxes (REQ-342). Unit tests cover every new form (REQ-339..REQ-342).
 - print updated version-file list on version changes [useReq] *(chver)*
   Added REQ-337 and REQ-338 to the SRS (version 1.65): chver must print
   an 'Updated files:' list with one repository-relative line per rewritten
@@ -1077,7 +1079,7 @@
 - \[0.50.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.50.0
 - \[0.51.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.51.0
 - \[0.52.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.0
-- \[0.52.10\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.10
+- \[0.52.11\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.11
 
 [0.1.0]: https://github.com/Ogekuri/GAlias/releases/tag/v0.1.0
 [0.2.0]: https://github.com/Ogekuri/GAlias/compare/v0.1.0..v0.2.0
@@ -1131,4 +1133,4 @@
 [0.50.0]: https://github.com/Ogekuri/GAlias/compare/v0.49.0..v0.50.0
 [0.51.0]: https://github.com/Ogekuri/GAlias/compare/v0.50.0..v0.51.0
 [0.52.0]: https://github.com/Ogekuri/GAlias/compare/v0.51.0..v0.52.0
-[0.52.10]: https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.10
+[0.52.11]: https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.11
