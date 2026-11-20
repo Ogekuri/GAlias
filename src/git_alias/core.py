@@ -1131,7 +1131,7 @@ HELP_TEXTS = {
     "lb": "Print all branches.",
     "lg": "Print commit history.",
     "lh": "Print last commit details.",
-    "ll": "Print commit history graph with full commit hashes and complete commit messages.",
+    "ll": "Print commit history graph with full commit hashes and complete commit messages. Body lines wrap to the console width. Options: --no-wrap (disable body wrapping).",
     "lm": "Print all merges.",
     "ls": "List tracked files using git ls-files.",
     "lsi": "List ignored files using git ls-files. Options: --include-all (show all, skip default directory filter).",
@@ -5351,30 +5351,60 @@ def cmd_lh(extra):
     return run_git_cmd(["log", "-1", "HEAD"], extra)
 
 
-## @brief Print the commit history graph rendering every commit in full.
+## @brief Columns reserved for the `git log --graph` lane prefix of `ll`.
+# @details Value `2`, matching the typical rendered lane prefix width (`| ` or
+# `* `); subtracted from the resolved console columns by
+# `_resolve_ll_wrap_width` so wrapped body text plus the graph prefix stays
+# inside the console (REQ-331).
+# @satisfies REQ-331
+LL_GRAPH_PREFIX_RESERVE = 2
+
+## @brief Resolve the `ll` body wrap width from the current console width.
+# @details Reads `shutil.get_terminal_size().columns` (honoring the `COLUMNS`
+# environment variable, then the active terminal, falling back to 80 columns)
+# and subtracts `LL_GRAPH_PREFIX_RESERVE` so wrapped body text plus the graph
+# lane prefix stays inside the console; the result never drops below one
+# column (REQ-331). Pure function: no subprocess execution.
+# @satisfies REQ-331
+# @return {int} Body text wrap width in columns, at least 1.
+# @note Complexity: O(1).
+# @see cmd_ll, LL_GRAPH_PREFIX_RESERVE
+def _resolve_ll_wrap_width() -> int:
+    return max(shutil.get_terminal_size().columns - LL_GRAPH_PREFIX_RESERVE, 1)
+
+
+## @brief Print the commit history graph rendering every commit in full with wrapped bodies.
 # @details Executes `git log --graph --decorate --all` with a pretty format
 # rendering the full hash, author date, relative date, decorations, subject,
 # and author name per commit (REQ-328), then appends the complete commit body
 # after the subject line so multi-line commit comments are printed entirely
-# (REQ-329). The `%+b` placeholder inserts the separating blank line only
-# when the body is non-empty, so single-line commits add no body section;
-# `--graph` pads every body line with the graph lanes. Operands are forwarded
-# to the delegated git command unchanged.
-# @satisfies REQ-008, REQ-328, REQ-329
-# @param extra {list | None} CLI operands forwarded to the delegated git command unchanged.
+# (REQ-329). A `%w(<width>,0,0)` placeholder placed immediately before the
+# body placeholder hard-wraps body lines longer than `<width>` at the width
+# resolved by `_resolve_ll_wrap_width` (REQ-330, REQ-331); header and subject
+# lines stay unwrapped and `--graph` re-emits the lane prefix characters and
+# their colors on every wrapped continuation line (REQ-332). The `--no-wrap`
+# operand disables body wrapping by selecting wrap width 0 and is omitted
+# from the forwarded git arguments (REQ-333); any other operand is forwarded
+# unchanged. The `%+b` placeholder inserts the separating blank line only
+# when the body is non-empty, so single-line commits add no body section.
+# @satisfies REQ-008, REQ-328, REQ-329, REQ-330, REQ-331, REQ-332, REQ-333
+# @param extra {list | None} CLI operands; `--no-wrap` disables body wrapping, every other operand is forwarded unchanged.
 # @return Result emitted by `run_git_cmd` for the delegated git subprocess.
 # @note Complexity: O(1) argv construction excluding the delegated git process runtime.
-# @see run_git_cmd, cmd_l, cmd_lg
+# @see run_git_cmd, _to_args, _resolve_ll_wrap_width, cmd_l, cmd_lg
 def cmd_ll(extra):
+    forward_args = _to_args(extra)
+    wrap_width = 0 if "--no-wrap" in forward_args else _resolve_ll_wrap_width()
     return run_git_cmd(
         [
             "log",
             "--graph",
             "--decorate",
-            "--format=format:%C(bold blue)%H%C(reset) - %C(bold cyan)%aD%C(reset) %C(bold green)(%ar)%C(reset)%C(bold yellow)%d%C(reset)%n %C(white)%s%C(reset) %C(dim white)- %an%C(reset)%n%+b",
+            "--format=format:%C(bold blue)%H%C(reset) - %C(bold cyan)%aD%C(reset) %C(bold green)(%ar)%C(reset)%C(bold yellow)%d%C(reset)%n %C(white)%s%C(reset) %C(dim white)- %an%C(reset)"
+            f"%w({wrap_width},0,0)%n%+b",
             "--all",
         ],
-        extra,
+        [arg for arg in forward_args if arg != "--no-wrap"],
     )
 
 

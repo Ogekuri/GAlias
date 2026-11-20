@@ -17,13 +17,14 @@ tags: ["requirements", "srs", "galias"]
 ---
 
 # GAlias CLI Requirements
-**Version**: 1.62
+**Version**: 1.63
 **Author**: Francesco Rolando
 **Date**: 2026-11-20
 
 ## Revision History
 | Date | Version | Change Summary |
 |------|---------|----------------|
+| 2026-11-20 | 1.63 | Extended `ll` so commit body lines wrap at the console width with the `--graph` lane prefixes and colors preserved on every continuation line, header/subject staying unwrapped, and a `--no-wrap` operand disabling the wrapping (REQ-330, REQ-331, REQ-332, REQ-333). |
 | 2026-11-20 | 1.62 | Changed `ll` commit rendering to print commits in full: the `git log` format now appends the complete commit body after the subject line so multi-line commit comments are rendered entirely (REQ-328, REQ-329). |
 | 2026-11-12 | 1.61 | Made the automatic pre-build cleanup of `dist/` verifiable: every default `scripts/build.sh` build now verifies before `uv build` that no release artifact of any previous version survives cleanup and aborts with an explicit English error otherwise (REQ-327). |
 | 2026-11-12 | 1.60 | Made `scripts/pre-release-check.sh` independent from `dist/`: the validation build runs into a run-scoped temporary directory through the new `scripts/build.sh --output-dir <directory>` mode (REQ-222, REQ-280, REQ-282, REQ-284, REQ-326), the pre-existing-artifact guard and the artifact git-ignore verification were removed (REQ-290, REQ-295), artifact validation and post-cleanup integrity now target the temporary directory (REQ-294, REQ-298), and `dist/` became an untouched, uninspected path (REQ-323, REQ-324, REQ-325). |
@@ -369,6 +370,10 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-256**: MUST define every Python module, package, class, function, variable, and constant name under `src/` using English tokens without Italian-derived identifiers.
 - **REQ-328**: MUST alias `ll` execute `git log --graph --decorate --all` with a pretty format rendering full hash, author date, relative date, decorations, subject, and author name per commit.
 - **REQ-329**: MUST alias `ll` append every commit's complete body after the subject line, rendering multi-line commit comments in full and omitting the body section when the body is empty.
+- **REQ-330**: MUST alias `ll` wrap commit body lines longer than the resolved wrap width by inserting the git log `%w(<width>,0,0)` placeholder immediately before the body placeholder in the log format.
+- **REQ-331**: MUST alias `ll` resolve the body wrap width as the console column count from `shutil.get_terminal_size()` minus the reserved graph-prefix width of 2, with minimum 1.
+- **REQ-332**: MUST alias `ll` preserve `--graph` lane prefixes and colors on every wrapped body continuation line while hash, date, decoration, subject, and author lines remain unwrapped.
+- **REQ-333**: MUST alias `ll` accept `--no-wrap` anywhere in its operands, omit that token from forwarded git arguments, and disable body wrapping when present.
 
 ### 3.2.1 Configuration Command Interface
 - **REQ-242**: MUST derive configurable paths, types, descriptions, defaults, allowed values, and input examples from one shared schema covering every DES-006 key.
@@ -627,3 +632,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-279** evidence: `src/git_alias/configuration.py` `_values_node` and `_params_node` recursing over schema fields with the parent child prefix.
 - **REQ-328** evidence: `src/git_alias/core.py` `cmd_ll` building the `git log --graph --decorate --all` argv whose pretty format renders full hash, author date, relative date, decorations, subject, and author name.
 - **REQ-329** evidence: `src/git_alias/core.py` `cmd_ll` pretty format terminating with `%n%+b` so every listed commit renders its complete body after the subject line and commits without a body add no extra body section.
+- **REQ-330** evidence: `src/git_alias/core.py` `cmd_ll` building the `--format=format:` string so the `%w(<width>,0,0)` placeholder precedes the `%n%+b` body placeholder.
+- **REQ-331** evidence: `src/git_alias/core.py` `_resolve_ll_wrap_width` computing `max(shutil.get_terminal_size().columns - LL_GRAPH_PREFIX_RESERVE, 1)` with `LL_GRAPH_PREFIX_RESERVE = 2`.
+- **REQ-332** evidence: `src/git_alias/core.py` `cmd_ll` delegating to `git log --graph` so the graph machinery re-emits lane prefixes and colors on every wrapped continuation line while the format region before the `%w` placeholder stays unwrapped.
+- **REQ-333** evidence: `src/git_alias/core.py` `cmd_ll` detecting `--no-wrap` anywhere in the operands, selecting wrap width 0, and filtering the token out of the forwarded git arguments.
