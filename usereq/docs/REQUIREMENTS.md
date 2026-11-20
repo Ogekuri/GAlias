@@ -17,13 +17,14 @@ tags: ["requirements", "srs", "galias"]
 ---
 
 # GAlias CLI Requirements
-**Version**: 1.63
+**Version**: 1.64
 **Author**: Francesco Rolando
 **Date**: 2026-11-20
 
 ## Revision History
 | Date | Version | Change Summary |
 |------|---------|----------------|
+| 2026-11-20 | 1.64 | Ordered the `major`, `minor`, and `patch` pre-build validation before any repository mutation: the `pre_release_check` script now runs as the first release-flow operation ahead of the release-prerequisites gate and the version update (REQ-319, REQ-334), the release flow performs no staging, commit, tag, merge, push, or version-file write before every pre-build check passes (REQ-335), and any pre-build-check failure exits non-zero leaving the repository unmodified (REQ-336). |
 | 2026-11-20 | 1.63 | Extended `ll` so commit body lines wrap at the console width with the `--graph` lane prefixes and colors preserved on every continuation line, header/subject staying unwrapped, and a `--no-wrap` operand disabling the wrapping (REQ-330, REQ-331, REQ-332, REQ-333). |
 | 2026-11-20 | 1.62 | Changed `ll` commit rendering to print commits in full: the `git log` format now appends the complete commit body after the subject line so multi-line commit comments are rendered entirely (REQ-328, REQ-329). |
 | 2026-11-12 | 1.61 | Made the automatic pre-build cleanup of `dist/` verifiable: every default `scripts/build.sh` build now verifies before `uv build` that no release artifact of any previous version survives cleanup and aborts with an explicit English error otherwise (REQ-327). |
@@ -187,9 +188,12 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-167**: MUST execute the configured `build_script` argv once per release as a release step ordered after the version update and before the release-version commit, with repository root as CWD and inherited stdio.
 - **REQ-168**: MUST abort the release with the `--- [release:<level>] Step ... failed: ... ---` diagnostic when `build_script` exits non-zero, before any commit, tag, or push.
 - **REQ-318**: MUST resolve the release pre-check command exclusively from the local `pre_release_check` configuration key, whose default value is an empty string, and MUST skip the pre-check step when the resolved value is empty.
-- **REQ-319**: MUST execute the configured `pre_release_check` argv as the first release step of `major`, `minor`, and `patch`, before the version update, with repository root as CWD, inherited stdio, and no shell.
+- **REQ-319**: MUST execute the configured `pre_release_check` argv as the first release-flow operation of `major`, `minor`, and `patch`, before the release-prerequisites gate and the version update, with repository root as CWD, inherited stdio, and no shell.
 - **REQ-320**: MUST abort the `major`, `minor`, and `patch` release flow when `pre_release_check` exits non-zero, reporting that the pre-release-check script failed and skipping all subsequent release steps.
 - **REQ-321**: MUST store `build_script` and `pre_release_check` only in the local `.galias.conf` scope and MUST NOT accept either key in the global `$HOME/.config/galias/config.json` scope.
+- **REQ-334**: MUST complete every `major`, `minor`, and `patch` pre-build check, comprising the REQ-319 `pre_release_check` script step and the REQ-026 release-prerequisites gate, before the release flow performs its first repository mutation.
+- **REQ-335**: MUST NOT stage, commit, tag, merge, push, or write any version-managed file in the `major`, `minor`, and `patch` release flow before every pre-build check completes successfully.
+- **REQ-336**: MUST terminate `major`, `minor`, and `patch` with a non-zero exit status and an unmodified repository (working tree, index, local branches, tags, and version-managed files unchanged) when any pre-build check fails.
 - **REQ-322**: MUST reject `--exec` on `major`, `minor`, and `patch` through the release-flag whitelist error and non-zero exit, and MUST NOT interpret its operands as a release step.
 - **REQ-027**: MUST the internal `cmd_release` function MUST reuse the same staging/worktree readiness and WIP amend decision logic used by `wip`, MUST determine the current version via `ver` before committing, MUST fail with the propagated detection error when version resolution fails, MUST create a `release: Release version <ver>` commit (where `<ver>` is `major.minor.patch`) by amending HEAD only when HEAD is an amendable `wip: work in progress.` commit not yet contained in configured `develop` and `master` and otherwise by creating a new commit, and MUST remain unavailable as a user-exposed CLI command.
 - **REQ-028**: MUST implement `ra` as inverse of `aa` by requiring configured `work` branch, no pending unstaged changes, and non-empty staging before unstaging all indexed entries.
@@ -521,7 +525,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-167** evidence: `src/git_alias/core.py` `_execute_release_flow` `run build script` step ordered after `update versions` and before `stage files`, executing `run_command(list(argv), cwd=root)`.
 - **REQ-168** evidence: `src/git_alias/core.py` `_execute_release_flow` `_run_release_step` wrapper converting the non-zero `build_script` exit into a `ReleaseError` before staging, commit, tag, or push.
 - **REQ-318** evidence: `src/git_alias/configuration.py` `SCHEMA["Local"]` `pre_release_check` parameter carrying the empty default and `src/git_alias/core.py` `_release_script_argv` returning `None` for an empty value.
-- **REQ-319** evidence: `src/git_alias/core.py` `_execute_release_flow` `run pre-release check script` step emitted before `update versions`.
+- **REQ-319** evidence: `src/git_alias/core.py` `_execute_release_flow` `run pre-release check script` step emitted as the first release-flow operation, before `_ensure_release_prerequisites()` and `update versions`.
 - **REQ-320** evidence: `src/git_alias/core.py` `_execute_release_flow` `_run_release_step` wrapper raising `ReleaseError` with the `--- [release:<level>] Step 'run pre-release check script' failed: ... ---` diagnostic.
 - **REQ-321** evidence: `src/git_alias/configuration.py` `SCHEMA` declaring `build_script` and `pre_release_check` only under `Local`, with `validate`/`read_scope` rejecting out-of-scope keys.
 - **REQ-322** evidence: `src/git_alias/core.py` `_parse_release_flags` whitelist `{"--include-patch", "--dev", "--develop"}` rejection path with English stderr and `sys.exit(1)`.
@@ -636,3 +640,6 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-331** evidence: `src/git_alias/core.py` `_resolve_ll_wrap_width` computing `max(shutil.get_terminal_size().columns - LL_GRAPH_PREFIX_RESERVE, 1)` with `LL_GRAPH_PREFIX_RESERVE = 2`.
 - **REQ-332** evidence: `src/git_alias/core.py` `cmd_ll` delegating to `git log --graph` so the graph machinery re-emits lane prefixes and colors on every wrapped continuation line while the format region before the `%w` placeholder stays unwrapped.
 - **REQ-333** evidence: `src/git_alias/core.py` `cmd_ll` detecting `--no-wrap` anywhere in the operands, selecting wrap width 0, and filtering the token out of the forwarded git arguments.
+- **REQ-334** evidence: `src/git_alias/core.py` `_execute_release_flow` emitting the `run pre-release check script` step before `_ensure_release_prerequisites()` and `update versions`; `tests/test_release_flow.py` `test_pre_release_check_precedes_gate_and_version_update`.
+- **REQ-335** evidence: `src/git_alias/core.py` `_execute_release_flow` ordering every `cmd_chver`, `cmd_tg`, `run_git_cmd`, and `cmd_changelog` mutation after the pre-build check phase; `tests/test_release_flow.py` `test_pre_release_check_precedes_gate_and_version_update`.
+- **REQ-336** evidence: `src/git_alias/core.py` `_run_release_command` converting `ReleaseError` into exit status 1; `tests/test_release_flow.py` `test_failing_pre_release_check_aborts_release` and `test_failing_prerequisites_gate_aborts_release` asserting `cmd_chver` and `run_git_cmd` are never invoked after a failed pre-build check.

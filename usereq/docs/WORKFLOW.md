@@ -212,8 +212,9 @@
               - `_release_script_argv(...)`: resolve the local `pre_release_check` and `build_script` command lines into argv lists, returning `None` for empty values without shell evaluation [`src/git_alias/core.py`]
                 - `get_config_value(...)`: read the configured release script command line [`src/git_alias/core.py`]
                 - `_parse_config_command_parts(...)`: tokenize the configured command line into argv tokens [`src/git_alias/core.py`]
-              - `_run_release_step(...)`: wrap the readiness gate, version update, build hook, and publication steps with release diagnostics [`src/git_alias/core.py`]
-                - `run_command(...)`: execute the configured `pre_release_check` argv as the first release step and the configured `build_script` argv between the version update and the release-version commit [`src/git_alias/core.py`]
+              - `_run_release_step(...)`: wrap the pre-release-check script step, the version update, the build hook, and the publication steps with release diagnostics [`src/git_alias/core.py`]
+                - `run_command(...)`: execute the configured `pre_release_check` argv as the first release-flow operation, before the release-prerequisites gate and the version update, and the configured `build_script` argv between the version update and the release-version commit [`src/git_alias/core.py`]
+              - `_ensure_release_prerequisites(...)`: enforce the release-prerequisites gate with fail-closed remote verification after the pre-release-check script step and before the version update [`src/git_alias/core.py`]
               - `_push_release_refs(...)`: push explicit branch/tag refspecs once with recovery diagnostics [`src/git_alias/core.py`]
                 - External boundary: `git push` transport to `origin` via `run_git_cmd(...)` with inherited stdio so push output and interactive SSH/credential authentication reach the user terminal.
             - `_resume_release_flow(...)`: validate the immutable prepared release and publish only missing refs for the resolved release scope (develop-only integration when develop-scoped) [`src/git_alias/core.py`]
@@ -413,11 +414,11 @@
 - Entrypoint(s):
   - `run_command(...)`: spawn the configured release script argv with repository root as CWD and inherited stdio [`src/git_alias/core.py`]
 - Lifecycle/trigger:
-  - Start: `_execute_release_flow(...)` resolves a non-empty local `pre_release_check` (executed as the first release step) or a non-empty local `build_script` (executed after the version update and before the release-version commit).
-  - Stop: synchronous completion of the configured script; a non-zero exit is converted by `_run_release_step(...)` into a `ReleaseError` that aborts the release before any commit, tag, or push.
+  - Start: `_execute_release_flow(...)` resolves a non-empty local `pre_release_check` (executed as the first release-flow operation, before the release-prerequisites gate and the version update) or a non-empty local `build_script` (executed after the version update and before the release-version commit).
+  - Stop: synchronous completion of the configured script; a non-zero exit is converted by `_run_release_step(...)` into a `ReleaseError` that aborts the release with non-zero exit before any repository mutation (version-file write, staging, commit, tag, merge, or push).
   - Threads: no explicit threads detected.
 - Internal Call-Trace Tree:
-  - `_execute_release_flow(...)`: orchestrate the release pipeline, running the readiness gate first and the build hook between the version update and the release-version commit [`src/git_alias/core.py`]
+  - `_execute_release_flow(...)`: orchestrate the release pipeline, running the pre-release-check script step first, before the release-prerequisites gate and the version update, and the build hook between the version update and the release-version commit [`src/git_alias/core.py`]
     - `_release_script_argv(...)`: resolve the configured script command lines into argv lists without shell evaluation [`src/git_alias/core.py`]
     - `_run_release_step(...)`: wrap the script execution and convert non-zero exits into `--- [release:<level>] Step ... failed: ... ---` diagnostics [`src/git_alias/core.py`]
       - `run_command(...)`: execute the argv list without shell [`src/git_alias/core.py`]

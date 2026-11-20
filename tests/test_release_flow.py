@@ -397,7 +397,8 @@ class ReleaseFlowTest(unittest.TestCase):
     ## @brief Verify the configuration-driven release script hooks and their ordering.
     # @details Empty keys MUST skip both steps; configured keys MUST tokenize the
     #          command line into argv and run from the repository root, with the
-    #          readiness gate first and the build hook after the version update.
+    #          pre-release check script before the version update and the build
+    #          hook after the version update.
     # @param self {ReleaseFlowTest} Isolated test instance.
     # @return {None} Assert REQ-166, REQ-167, REQ-318, and REQ-319 ordering.
     def test_release_script_hooks_follow_configuration(self):
@@ -486,5 +487,90 @@ class ReleaseFlowTest(unittest.TestCase):
                 core._execute_release_flow("patch")
         self.assertIn("run pre-release check script", str(raised.exception))
         self.assertIn("readiness failed", str(raised.exception))
+        chver.assert_not_called()
+        run_git.assert_not_called()
+
+    ## @brief Verify the pre-build check phase completes before any release mutation.
+    # @details Records the pre-release check script execution, the readiness gate,
+    #          and the version update to assert the script runs first, the gate
+    #          follows it, and the version update remains the first release
+    #          mutation of the flow.
+    # @param self {ReleaseFlowTest} Isolated test instance.
+    # @return {None} Assert REQ-334 and REQ-335 pre-build ordering.
+    def test_pre_release_check_precedes_gate_and_version_update(self):
+        events = []
+
+        def record_step(_level, step_name, action):
+            events.append("step:" + step_name)
+            if step_name in (
+                "run pre-release check script",
+                "update versions",
+                "run build script",
+            ):
+                action()
+            return None
+
+        def record_gate():
+            events.append("gate:_ensure_release_prerequisites")
+            return {"master": "master", "develop": "develop", "work": "work"}
+
+        def record_chver(target_version):
+            events.append("mutate:chver:" + "".join(target_version))
+
+        def record_command(cmd, cwd=None):
+            events.append("script:" + cmd[0])
+            return None
+
+        core.CONFIG["pre_release_check"] = "scripts/pre-release-check.sh"
+        core.CONFIG["build_script"] = ""
+        with mock.patch.object(
+            core, "_ensure_release_prerequisites", side_effect=record_gate
+        ), mock.patch.object(core, "get_version_rules", return_value=[("README.md", "x")]), mock.patch.object(
+            core, "get_git_root", return_value=Path("/synthetic")
+        ), mock.patch.object(
+            core, "_determine_canonical_version", return_value="1.2.3"
+        ), mock.patch.object(core, "_bump_semver_version", return_value="1.2.4"), mock.patch.object(
+            core, "_run_release_step", side_effect=record_step
+        ), mock.patch.object(core, "run_command", side_effect=record_command), mock.patch.object(
+            core, "cmd_chver", side_effect=record_chver
+        ):
+            core._execute_release_flow("patch")
+
+        self.assertIn("script:scripts/pre-release-check.sh", events)
+        self.assertLess(
+            events.index("script:scripts/pre-release-check.sh"),
+            events.index("gate:_ensure_release_prerequisites"),
+        )
+        self.assertLess(
+            events.index("gate:_ensure_release_prerequisites"),
+            events.index("step:update versions"),
+        )
+        self.assertLess(
+            events.index("step:update versions"),
+            events.index("mutate:chver:1.2.4"),
+        )
+
+    ## @brief Verify a failed readiness gate aborts the release without mutations.
+    # @details Lets the pre-release check script step succeed, then raises the
+    #          gate error before the version update; asserts the version update
+    #          and every Git mutation remain untouched.
+    # @param self {ReleaseFlowTest} Isolated test instance.
+    # @return {None} Assert REQ-336 fail-fast semantics for the gate branch.
+    def test_failing_prerequisites_gate_aborts_release(self):
+        core.CONFIG["pre_release_check"] = "scripts/pre-release-check.sh"
+        core.CONFIG["build_script"] = ""
+        with mock.patch.object(
+            core,
+            "_ensure_release_prerequisites",
+            side_effect=core.ReleaseError("gate failed"),
+        ), mock.patch.object(core, "get_version_rules", return_value=[("README.md", "x")]), mock.patch.object(
+            core, "get_git_root", return_value=Path("/synthetic")
+        ), mock.patch.object(
+            core, "_run_release_step", return_value=None
+        ), mock.patch.object(core, "run_command"), mock.patch.object(
+            core, "cmd_chver"
+        ) as chver, mock.patch.object(core, "run_git_cmd") as run_git:
+            with self.assertRaises(core.ReleaseError):
+                core._execute_release_flow("patch")
         chver.assert_not_called()
         run_git.assert_not_called()

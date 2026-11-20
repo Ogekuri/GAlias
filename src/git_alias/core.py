@@ -2888,11 +2888,15 @@ def _delete_associated_branch_and_worktree(
 #          immediately so no local release mutation can proceed against
 #          unverifiable remote data. Subsequent checks enforce remote-branch
 #          existence, remote update status for master and develop, current branch
-#          equal to configured work, and a clean working tree and index.
+#          equal to configured work, and a clean working tree and index. Runs after
+#          the REQ-319 `pre_release_check` script step so the whole pre-build check
+#          phase completes before the release flow performs its first repository
+#          mutation (REQ-334); the `origin` remote-reference refresh belongs to the
+#          pre-build check phase and is not a release mutation.
 # @return {Dict[str, str]} Branch map with keys `master`, `develop`, `work`.
 # @throws ReleaseError Missing local/remote branches, failed remote refresh,
 #         pending remote updates, non-work checkout, or dirty state.
-# @satisfies REQ-026, REQ-047
+# @satisfies REQ-026, REQ-047, REQ-334
 def _ensure_release_prerequisites():
     master_branch = get_branch("master")
     develop_branch = get_branch("develop")
@@ -3165,13 +3169,18 @@ def _resume_release_flow(level, dev_release=False):
 #            pushes develop alone, then atomically publishes master and the exact tag.
 #          Changelog flags always include `--force-write`; `patch` auto-adds `--include-patch`.
 #          Release script hooks come from the local configuration (REQ-166, REQ-318):
-#          a non-empty `pre_release_check` runs as the first release step before the
-#          version update, and a non-empty `build_script` runs after the version update
-#          and before the release-version commit so build artifacts are staged by
-#          `git add --all` and included in that commit. Both execute through
-#          `run_command(...)` without shell, with repository root as CWD and
-#          inherited stdio; a non-zero exit aborts the release before any commit,
-#          tag, or push (REQ-168, REQ-320).
+#          a non-empty `pre_release_check` runs as the first release-flow operation,
+#          before the release-prerequisites gate and the version update, so the
+#          complete pre-build check phase observes the repository exactly as the
+#          command received it (REQ-319, REQ-334); a non-empty `build_script` runs
+#          after the version update and before the release-version commit so build
+#          artifacts are staged by `git add --all` and included in that commit.
+#          Both execute through `run_command(...)` without shell, with repository
+#          root as CWD and inherited stdio; a non-zero exit aborts the release with
+#          non-zero status before any staging, commit, tag, merge, push, or
+#          version-file write, leaving the repository unmodified because the whole
+#          pre-build check phase mutates no release state (REQ-168, REQ-320,
+#          REQ-335, REQ-336).
 #          The temporary changelog tag is deleted before integration. The definitive
 #          tag is prepared before any push; final publication is atomic and tag-scoped.
 #          Complexity: O(F + C) version-file and changelog traversal plus Git operations.
@@ -3180,22 +3189,16 @@ def _resume_release_flow(level, dev_release=False):
 # @param dev_release {bool} Develop-scoped release (REQ-045, REQ-200); integrates and
 #          publishes configured `develop` only, leaving `master` unchanged.
 # @return None; raises `ReleaseError` or `VersionDetectionError` on failure.
-# @satisfies REQ-026, REQ-045, REQ-072, REQ-166, REQ-167, REQ-168, REQ-200, REQ-318, REQ-319, REQ-320
-# @return Result emitted by `_execute_release_flow` according to command contract.
+# @satisfies REQ-026, REQ-045, REQ-072, REQ-166, REQ-167, REQ-168, REQ-200, REQ-318, REQ-319, REQ-320, REQ-334, REQ-335, REQ-336
 def _execute_release_flow(level, changelog_args=None, dev_release=False):
-    branches = _ensure_release_prerequisites()
+    root = get_git_root()
+    pre_release_check = _release_script_argv("pre_release_check")
+    build_script = _release_script_argv("build_script")
     rules = get_version_rules()
     if not rules:
         raise ReleaseError(
             "No version rules configured. Cannot compute the next version."
         )
-    root = get_git_root()
-    pre_release_check = _release_script_argv("pre_release_check")
-    build_script = _release_script_argv("build_script")
-    current_version = _determine_canonical_version(root, rules)
-    target_version = _bump_semver_version(current_version, level)
-    release_message = f"release: Release version {target_version}"
-    release_tag = f"v{target_version}"
     changelog_flags = ["--force-write"]
     if level == "patch" and "--include-patch" not in changelog_flags:
         changelog_flags.append("--include-patch")
@@ -3211,6 +3214,11 @@ def _execute_release_flow(level, changelog_args=None, dev_release=False):
             "run pre-release check script",
             lambda: run_command(list(pre_release_check), cwd=root),
         )
+    branches = _ensure_release_prerequisites()
+    current_version = _determine_canonical_version(root, rules)
+    target_version = _bump_semver_version(current_version, level)
+    release_message = f"release: Release version {target_version}"
+    release_tag = f"v{target_version}"
     _run_release_step(level, "update versions", lambda: cmd_chver([target_version]))
     if build_script:
         _run_release_step(
@@ -3326,7 +3334,7 @@ def _execute_backup_flow():
 #          `_resume_release_flow` and `_execute_release_flow`.
 # @return None; side-effects: release workflow execution and stderr diagnostics on failure.
 # @exception SystemExit Exit code 1 (or the failing command return code) on workflow failure.
-# @satisfies REQ-026, REQ-045, REQ-166, REQ-168, REQ-176, REQ-200, REQ-318, REQ-319, REQ-320
+# @satisfies REQ-026, REQ-045, REQ-166, REQ-168, REQ-176, REQ-200, REQ-318, REQ-319, REQ-320, REQ-336
 # @return Result emitted by `_run_release_command` according to command contract.
 def _run_release_command(level, changelog_args=None, dev_release=False):
     try:
