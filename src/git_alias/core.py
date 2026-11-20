@@ -1131,7 +1131,7 @@ HELP_TEXTS = {
     "lb": "Print all branches.",
     "lg": "Print commit history.",
     "lh": "Print last commit details.",
-    "ll": "Print commit history graph with full commit hashes.",
+    "ll": "Print commit history graph with full commit hashes and complete commit messages.",
     "lm": "Print all merges.",
     "ls": "List tracked files using git ls-files.",
     "lsi": "List ignored files using git ls-files. Options: --include-all (show all, skip default directory filter).",
@@ -5351,17 +5351,27 @@ def cmd_lh(extra):
     return run_git_cmd(["log", "-1", "HEAD"], extra)
 
 
-## @brief Execute `cmd_ll` runtime logic for Git-Alias CLI.
-# @details Executes `cmd_ll` using deterministic CLI control-flow and explicit error propagation.
-# @param extra Input parameter consumed by `cmd_ll`.
-# @return Result emitted by `cmd_ll` according to command contract.
+## @brief Print the commit history graph rendering every commit in full.
+# @details Executes `git log --graph --decorate --all` with a pretty format
+# rendering the full hash, author date, relative date, decorations, subject,
+# and author name per commit (REQ-328), then appends the complete commit body
+# after the subject line so multi-line commit comments are printed entirely
+# (REQ-329). The `%+b` placeholder inserts the separating blank line only
+# when the body is non-empty, so single-line commits add no body section;
+# `--graph` pads every body line with the graph lanes. Operands are forwarded
+# to the delegated git command unchanged.
+# @satisfies REQ-008, REQ-328, REQ-329
+# @param extra {list | None} CLI operands forwarded to the delegated git command unchanged.
+# @return Result emitted by `run_git_cmd` for the delegated git subprocess.
+# @note Complexity: O(1) argv construction excluding the delegated git process runtime.
+# @see run_git_cmd, cmd_l, cmd_lg
 def cmd_ll(extra):
     return run_git_cmd(
         [
             "log",
             "--graph",
             "--decorate",
-            "--format=format:%C(bold blue)%H%C(reset) - %C(bold cyan)%aD%C(reset) %C(bold green)(%ar)%C(reset)%C(bold yellow)%d%C(reset)%n %C(white)%s%C(reset) %C(dim white)- %an%C(reset)",
+            "--format=format:%C(bold blue)%H%C(reset) - %C(bold cyan)%aD%C(reset) %C(bold green)(%ar)%C(reset)%C(bold yellow)%d%C(reset)%n %C(white)%s%C(reset) %C(dim white)- %an%C(reset)%n%+b",
             "--all",
         ],
         extra,

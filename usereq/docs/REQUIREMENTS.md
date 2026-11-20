@@ -17,13 +17,14 @@ tags: ["requirements", "srs", "galias"]
 ---
 
 # GAlias CLI Requirements
-**Version**: 1.61
+**Version**: 1.62
 **Author**: Francesco Rolando
-**Date**: 2026-11-12
+**Date**: 2026-11-20
 
 ## Revision History
 | Date | Version | Change Summary |
 |------|---------|----------------|
+| 2026-11-20 | 1.62 | Changed `ll` commit rendering to print commits in full: the `git log` format now appends the complete commit body after the subject line so multi-line commit comments are rendered entirely (REQ-328, REQ-329). |
 | 2026-11-12 | 1.61 | Made the automatic pre-build cleanup of `dist/` verifiable: every default `scripts/build.sh` build now verifies before `uv build` that no release artifact of any previous version survives cleanup and aborts with an explicit English error otherwise (REQ-327). |
 | 2026-11-12 | 1.60 | Made `scripts/pre-release-check.sh` independent from `dist/`: the validation build runs into a run-scoped temporary directory through the new `scripts/build.sh --output-dir <directory>` mode (REQ-222, REQ-280, REQ-282, REQ-284, REQ-326), the pre-existing-artifact guard and the artifact git-ignore verification were removed (REQ-290, REQ-295), artifact validation and post-cleanup integrity now target the temporary directory (REQ-294, REQ-298), and `dist/` became an untouched, uninspected path (REQ-323, REQ-324, REQ-325). |
 | 2026-11-12 | 1.59 | Replaced the `--exec` release option with the local `build_script` configuration key executed between version update and release-version commit (DES-006, REQ-026, REQ-166, REQ-167, REQ-168) and added the local `pre_release_check` configuration key executed as the first release step with fail-fast abort semantics (REQ-318, REQ-319, REQ-320, REQ-321). |
@@ -366,6 +367,8 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-224**: MUST print one `--- [pre-release-check] <message> ---` English progress line per step plus a final success line.
 - **REQ-225**: MUST abort at the first failing step with non-zero exit status and skip all subsequent steps.
 - **REQ-256**: MUST define every Python module, package, class, function, variable, and constant name under `src/` using English tokens without Italian-derived identifiers.
+- **REQ-328**: MUST alias `ll` execute `git log --graph --decorate --all` with a pretty format rendering full hash, author date, relative date, decorations, subject, and author name per commit.
+- **REQ-329**: MUST alias `ll` append every commit's complete body after the subject line, rendering multi-line commit comments in full and omitting the body section when the body is empty.
 
 ### 3.2.1 Configuration Command Interface
 - **REQ-242**: MUST derive configurable paths, types, descriptions, defaults, allowed values, and input examples from one shared schema covering every DES-006 key.
@@ -622,3 +625,5 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-277** evidence: `src/git_alias/configuration.py` `_append_metadata` rendering every parameter metadata entry as a `├──`/`└──` child of the owning parameter.
 - **REQ-278** evidence: `src/git_alias/configuration.py` `_values_array`, `_values_map`, `_params_node`, and `_params_array` indenting table rows with the child prefix of the owning node or labelled entry.
 - **REQ-279** evidence: `src/git_alias/configuration.py` `_values_node` and `_params_node` recursing over schema fields with the parent child prefix.
+- **REQ-328** evidence: `src/git_alias/core.py` `cmd_ll` building the `git log --graph --decorate --all` argv whose pretty format renders full hash, author date, relative date, decorations, subject, and author name.
+- **REQ-329** evidence: `src/git_alias/core.py` `cmd_ll` pretty format terminating with `%n%+b` so every listed commit renders its complete body after the subject line and commits without a body add no extra body section.
