@@ -17,13 +17,14 @@ tags: ["requirements", "srs", "galias"]
 ---
 
 # GAlias CLI Requirements
-**Version**: 1.64
+**Version**: 1.65
 **Author**: Francesco Rolando
 **Date**: 2026-11-20
 
 ## Revision History
 | Date | Version | Change Summary |
 |------|---------|----------------|
+| 2026-11-20 | 1.65 | Added the version-update file report: `chver` now prints an `Updated files:` list with one repository-relative line per rewritten version-managed file after the completion line (REQ-337), and the `major`/`minor`/`patch` version-update step and the `rollback` version-restore step print the same list through the shared `chver` flow (REQ-338). |
 | 2026-11-20 | 1.64 | Ordered the `major`, `minor`, and `patch` pre-build validation before any repository mutation: the `pre_release_check` script now runs as the first release-flow operation ahead of the release-prerequisites gate and the version update (REQ-319, REQ-334), the release flow performs no staging, commit, tag, merge, push, or version-file write before every pre-build check passes (REQ-335), and any pre-build-check failure exits non-zero leaving the repository unmodified (REQ-336). |
 | 2026-11-20 | 1.63 | Extended `ll` so commit body lines wrap at the console width with the `--graph` lane prefixes and colors preserved on every continuation line, header/subject staying unwrapped, and a `--no-wrap` operand disabling the wrapping (REQ-330, REQ-331, REQ-332, REQ-333). |
 | 2026-11-20 | 1.62 | Changed `ll` commit rendering to print commits in full: the `git log` format now appends the complete commit body after the subject line so multi-line commit comments are rendered entirely (REQ-328, REQ-329). |
@@ -194,6 +195,8 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-334**: MUST complete every `major`, `minor`, and `patch` pre-build check, comprising the REQ-319 `pre_release_check` script step and the REQ-026 release-prerequisites gate, before the release flow performs its first repository mutation.
 - **REQ-335**: MUST NOT stage, commit, tag, merge, push, or write any version-managed file in the `major`, `minor`, and `patch` release flow before every pre-build check completes successfully.
 - **REQ-336**: MUST terminate `major`, `minor`, and `patch` with a non-zero exit status and an unmodified repository (working tree, index, local branches, tags, and version-managed files unchanged) when any pre-build check fails.
+- **REQ-337**: MUST print an `Updated files:` list with one `- <repository-relative path>` line per rewritten repository file after a successful `chver` version update.
+- **REQ-338**: MUST print the REQ-337 `Updated files:` list from the `major`, `minor`, and `patch` version-update step and from the `rollback` version-restore step through the shared `chver` flow.
 - **REQ-322**: MUST reject `--exec` on `major`, `minor`, and `patch` through the release-flag whitelist error and non-zero exit, and MUST NOT interpret its operands as a release step.
 - **REQ-027**: MUST the internal `cmd_release` function MUST reuse the same staging/worktree readiness and WIP amend decision logic used by `wip`, MUST determine the current version via `ver` before committing, MUST fail with the propagated detection error when version resolution fails, MUST create a `release: Release version <ver>` commit (where `<ver>` is `major.minor.patch`) by amending HEAD only when HEAD is an amendable `wip: work in progress.` commit not yet contained in configured `develop` and `master` and otherwise by creating a new commit, and MUST remain unavailable as a user-exposed CLI command.
 - **REQ-028**: MUST implement `ra` as inverse of `aa` by requiring configured `work` branch, no pending unstaged changes, and non-empty staging before unstaging all indexed entries.
@@ -643,3 +646,5 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-334** evidence: `src/git_alias/core.py` `_execute_release_flow` emitting the `run pre-release check script` step before `_ensure_release_prerequisites()` and `update versions`; `tests/test_release_flow.py` `test_pre_release_check_precedes_gate_and_version_update`.
 - **REQ-335** evidence: `src/git_alias/core.py` `_execute_release_flow` ordering every `cmd_chver`, `cmd_tg`, `run_git_cmd`, and `cmd_changelog` mutation after the pre-build check phase; `tests/test_release_flow.py` `test_pre_release_check_precedes_gate_and_version_update`.
 - **REQ-336** evidence: `src/git_alias/core.py` `_run_release_command` converting `ReleaseError` into exit status 1; `tests/test_release_flow.py` `test_failing_pre_release_check_aborts_release` and `test_failing_prerequisites_gate_aborts_release` asserting `cmd_chver` and `run_git_cmd` are never invoked after a failed pre-build check.
+- **REQ-337** evidence: `src/git_alias/core.py` `cmd_chver` printing the `Updated files:` list after the `{action} completed` line; `tests/test_ver_command.py` `test_cmd_chver_prints_updated_files_list`.
+- **REQ-338** evidence: `src/git_alias/core.py` `_execute_release_flow` `update versions` step and `cmd_rollback` version-restore step delegating to `cmd_chver`, which emits the REQ-337 list.

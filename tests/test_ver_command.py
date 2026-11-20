@@ -314,3 +314,85 @@ class VerCommandTest(unittest.TestCase):
                     ) as build_inventory:
                         core.cmd_chver(["1.2.4"])
                     self.assertEqual(build_inventory.call_count, 1)
+
+    ## @brief Verify the REQ-337 updated-file report after a successful version update.
+    # @details Updates two version-managed files in a temporary repository and asserts
+    #          the completion line is followed by the `Updated files:` list containing
+    #          one repository-relative line per rewritten file.
+    # @param self {VersionCommandTest} Isolated test instance.
+    # @return {None} Assert REQ-337 list content and ordering after the completion line.
+    def test_cmd_chver_prints_updated_files_list(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            module_path = root / "module.py"
+            readme_path = root / "README.md"
+            module_path.write_text('__version__ = "1.2.3"\n', encoding="utf-8")
+            readme_path.write_text('Current version "1.2.3"\n', encoding="utf-8")
+            self._set_rules(
+                [
+                    {"pattern": "module.py", "regex": r'__version__\s*=\s*"(\d+\.\d+\.\d+)"'},
+                    {"pattern": "README.md", "regex": r'"(\d+\.\d+\.\d+)"'},
+                ]
+            )
+            with mock.patch.object(core, "get_git_root", return_value=root):
+                with self._mock_ls_files(root):
+                    buffer = io.StringIO()
+                    with contextlib.redirect_stdout(buffer):
+                        core.cmd_chver(["1.2.4"])
+            output = buffer.getvalue()
+            self.assertIn("Upgrade completed: version is now 1.2.4.", output)
+            self.assertIn("Updated files:", output)
+            self.assertIn("- module.py", output)
+            self.assertIn("- README.md", output)
+            self.assertLess(
+                output.index("Upgrade completed: version is now 1.2.4."),
+                output.index("Updated files:"),
+            )
+
+    ## @brief Verify the updated-file report lists only files with rewritten occurrences.
+    # @details One rule rewrites its file while a second matched rule finds no occurrence;
+    #          asserts the `Updated files:` list contains only the rewritten file.
+    # @param self {VersionCommandTest} Isolated test instance.
+    # @return {None} Assert REQ-337 per-file membership semantics.
+    def test_cmd_chver_lists_only_files_with_rewritten_occurrences(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "module.py").write_text('__version__ = "1.2.3"\n', encoding="utf-8")
+            (root / "notes.py").write_text("notes: 1.2.3\n", encoding="utf-8")
+            self._set_rules(
+                [
+                    {"pattern": "*.py", "regex": r'__version__\s*=\s*"(\d+\.\d+\.\d+)"'},
+                ]
+            )
+            with mock.patch.object(core, "get_git_root", return_value=root):
+                with self._mock_ls_files(root):
+                    buffer = io.StringIO()
+                    with contextlib.redirect_stdout(buffer):
+                        core.cmd_chver(["1.2.4"])
+            output = buffer.getvalue()
+            self.assertIn("Updated files:", output)
+            self.assertIn("- module.py", output)
+            self.assertNotIn("- notes.py", output)
+
+    ## @brief Verify the updated-file report is omitted when the version is unchanged.
+    # @details Requests the current version so the command returns early; asserts the
+    #          informational line is printed and no `Updated files:` list appears.
+    # @param self {VersionCommandTest} Isolated test instance.
+    # @return {None} Assert REQ-337 no-op boundary without the file list.
+    def test_cmd_chver_omits_file_list_when_version_already_current(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            (root / "module.py").write_text('__version__ = "1.2.3"\n', encoding="utf-8")
+            self._set_rules(
+                [
+                    {"pattern": "module.py", "regex": r'__version__\s*=\s*"(\d+\.\d+\.\d+)"'},
+                ]
+            )
+            with mock.patch.object(core, "get_git_root", return_value=root):
+                with self._mock_ls_files(root):
+                    buffer = io.StringIO()
+                    with contextlib.redirect_stdout(buffer):
+                        core.cmd_chver(["1.2.3"])
+            output = buffer.getvalue()
+            self.assertIn("The project version is already 1.2.3.", output)
+            self.assertNotIn("Updated files:", output)

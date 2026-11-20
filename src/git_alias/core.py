@@ -5756,10 +5756,23 @@ def cmd_ver(extra):
     print(canonical)
 
 
-## @brief Execute `cmd_chver` runtime logic for Git-Alias CLI.
-# @details Executes `cmd_chver` using deterministic CLI control-flow and explicit error propagation.
-# @param extra Input parameter consumed by `cmd_chver`.
-# @return Result emitted by `cmd_chver` according to command contract.
+## @brief Change the application version across every version-managed repository file.
+# @details Requires exactly one `<major.minor.patch>` operand (REQ-025). Detects the current
+#          canonical version from active `ver_rules`, skips with an informational line when the
+#          requested version equals the current one, rewrites every matching occurrence with
+#          `_replace_versions_in_text`, re-runs the canonical version detection to confirm the
+#          target version, and on success prints the completion line followed by an
+#          `Updated files:` list with one repository-relative line per rewritten file
+#          (REQ-337). Zero rewrites, confirmation mismatch, and detection failures exit
+#          with status 1 without printing the file list. Every `major`, `minor`, and `patch`
+#          release and the `rollback` version restore reuse this command, so they print
+#          the same list (REQ-338).
+# @param extra {list | None} CLI operands; exactly one `<major.minor.patch>` token is accepted.
+# @return {None} On success prints `{action} completed: version is now <confirmed>.` followed by
+#          the `Updated files:` list; on failure writes English diagnostics to stderr.
+# @exception SystemExit Exit code 1 on wrong operand count, malformed target, missing rules,
+#          version-detection failure, zero rewrites, or confirmation mismatch.
+# @satisfies REQ-025, REQ-337, REQ-338
 def cmd_chver(extra):
     args = _to_args(extra)
     if len(args) != 1:
@@ -5803,6 +5816,7 @@ def cmd_chver(extra):
         return
     action = "Upgrade" if target_tuple > current_tuple else "Downgrade"
     replacements = 0
+    updated_paths: List[str] = []
     for context in contexts:
         for file_path in context.files:
             text = _read_version_file_text(file_path, text_cache=text_cache)
@@ -5818,6 +5832,7 @@ def cmd_chver(extra):
                     print(f"Unable to write {file_path}: {exc}", file=sys.stderr)
                     sys.exit(1)
                 text_cache[file_path] = new_text
+                updated_paths.append(context.relative_map.get(file_path, str(file_path)))
                 replacements += count
     if replacements == 0:
         print(
@@ -5842,6 +5857,9 @@ def cmd_chver(extra):
         )
         sys.exit(1)
     print(f"{action} completed: version is now {confirmed}.")
+    print("Updated files:")
+    for relative_path in updated_paths:
+        print(f"- {relative_path}")
 
 
 ## @brief CLI entry-point for the `major` release subcommand.

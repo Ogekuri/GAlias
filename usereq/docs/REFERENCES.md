@@ -458,7 +458,7 @@ width to TREE_INDENT so sibling alignment stays depth-derived (REQ-275).
 
 ---
 
-# core.py | Python | 6224L | 301 symbols | 19 imports | 1945 comments
+# core.py | Python | 6242L | 301 symbols | 19 imports | 1958 comments
 > Path: `src/git_alias/core.py`
 
 ## Imports
@@ -2832,13 +2832,26 @@ flags only when explicitly requested.
 - @param extra Input parameter consumed by `cmd_ver`.
 - @return Result emitted by `cmd_ver` according to command contract.
 
-### fn `def cmd_chver(extra)` (L5763-5846)
-- @brief Execute `cmd_chver` runtime logic for Git-Alias CLI.
-- @details Executes `cmd_chver` using deterministic CLI control-flow and explicit error propagation.
-- @param extra Input parameter consumed by `cmd_chver`.
-- @return Result emitted by `cmd_chver` according to command contract.
+### fn `def cmd_chver(extra)` (L5776-5864)
+- @brief Change the application version across every version-managed repository file.
+- @details Requires exactly one `<major.minor.patch>` operand (REQ-025). Detects the current
+canonical version from active `ver_rules`, skips with an informational line when the
+requested version equals the current one, rewrites every matching occurrence with
+`_replace_versions_in_text`, re-runs the canonical version detection to confirm the
+target version, and on success prints the completion line followed by an
+`Updated files:` list with one repository-relative line per rewritten file
+(REQ-337). Zero rewrites, confirmation mismatch, and detection failures exit
+with status 1 without printing the file list. Every `major`, `minor`, and `patch`
+release and the `rollback` version restore reuse this command, so they print
+the same list (REQ-338).
+- @param extra {list | None} CLI operands; exactly one `<major.minor.patch>` token is accepted.
+- @return {None} On success prints `{action} completed: version is now <confirmed>.` followed by
+the `Updated files:` list; on failure writes English diagnostics to stderr.
+- @exception SystemExit Exit code 1 on wrong operand count, malformed target, missing rules,
+version-detection failure, zero rewrites, or confirmation mismatch.
+- @satisfies REQ-025, REQ-337, REQ-338
 
-### fn `def cmd_major(extra)` (L5861-5867)
+### fn `def cmd_major(extra)` (L5879-5885)
 - @brief CLI entry-point for the `major` release subcommand.
 - @details Increments the major semver index (resets minor and patch to 0), merges and pushes
 to both configured `develop` and `master` branches, regenerates changelog via a
@@ -2854,7 +2867,7 @@ existing release objects unchanged.
 - @exception SystemExit Exit code 1 on invalid operands or release-flow failure.
 - @satisfies REQ-026, REQ-045, REQ-072, REQ-166, REQ-167, REQ-168, REQ-200
 
-### fn `def cmd_minor(extra)` (L5882-5888)
+### fn `def cmd_minor(extra)` (L5900-5906)
 - @brief CLI entry-point for the `minor` release subcommand.
 - @details Increments the minor semver index (resets patch to 0), merges and pushes to both
 configured `develop` and `master` branches, regenerates changelog via a temporary local
@@ -2870,7 +2883,7 @@ existing release objects unchanged.
 - @exception SystemExit Exit code 1 on invalid operands or release-flow failure.
 - @satisfies REQ-026, REQ-045, REQ-072, REQ-166, REQ-167, REQ-168, REQ-200
 
-### fn `def cmd_patch(extra)` (L5903-5909)
+### fn `def cmd_patch(extra)` (L5921-5927)
 - @brief CLI entry-point for the `patch` release subcommand.
 - @details Increments the patch semver index and runs the same default workflow as `major`
 and `minor`: integrates work/develop/master, tags configured `master`, pushes
@@ -2886,7 +2899,7 @@ existing release objects unchanged.
 - @exception SystemExit Exit code 1 on invalid operands or release-flow failure.
 - @satisfies REQ-026, REQ-045, REQ-072, REQ-166, REQ-167, REQ-168, REQ-200
 
-### fn `def cmd_backup(extra)` (L5917-5927)
+### fn `def cmd_backup(extra)` (L5935-5945)
 - @brief CLI entry-point for the `backup` workflow subcommand.
 - @details Runs the same preflight checks used by `major`/`minor`/`patch`, then integrates the
 configured `work` branch into the configured `develop` branch and pushes `develop`
@@ -2895,7 +2908,7 @@ to its remote tracking branch before returning to `work`.
 - @return None; delegates to `_run_backup_command()`.
 - @satisfies REQ-047, REQ-048, REQ-049
 
-### fn `def cmd_changelog(extra)` (L5937-5974)
+### fn `def cmd_changelog(extra)` (L5955-5992)
 - @brief CLI entry-point for the `changelog` subcommand.
 - @details Parses flags, delegates to `generate_changelog_document`, and writes or prints the result.
 Accepted flags: `--include-patch`, `--force-write`, `--print-only`,
@@ -2906,16 +2919,16 @@ Exits with status 1 when `CHANGELOG.md` already exists and `--force-write` was n
 - @return None; side-effects: writes `CHANGELOG.md` to disk or prints to stdout.
 - @satisfies REQ-018, REQ-040, REQ-041, REQ-043
 
-- var `COMMANDS = {` (L5977)
+- var `COMMANDS = {` (L5995)
 - @brief Constant `COMMANDS` used by CLI runtime paths and policies.
-### fn `def print_command_help(name, width=None)` (L6066-6073)
+### fn `def print_command_help(name, width=None)` (L6084-6091)
 - @brief Execute `print_command_help` runtime logic for Git-Alias CLI.
 - @details Executes `print_command_help` using deterministic CLI control-flow and explicit error propagation.
 - @param name Input parameter consumed by `print_command_help`.
 - @param width Input parameter consumed by `print_command_help`.
 - @return Result emitted by `print_command_help` according to command contract.
 
-### fn `def print_all_help()` (L6080-6100)
+### fn `def print_all_help()` (L6098-6118)
 - @brief Render management help, schema-derived values, and sorted aliases.
 - @details O(N) output; retains section order and delegates the configuration
 tree to the annotated values renderer. Reads CONFIG without changing files
@@ -2923,7 +2936,7 @@ or state.
 - @return {None} Writes English help to stdout.
 - @satisfies DES-009, REQ-016, REQ-192, REQ-243, REQ-250
 
-### fn `def main(argv=None, *, check_updates: bool = True)` (L6121-6225)
+### fn `def main(argv=None, *, check_updates: bool = True)` (L6139-6243)
 - @brief Execute `main` runtime logic for Git-Alias CLI.
 - @details Executes `main` using deterministic CLI control-flow and explicit error propagation.
 Management dispatch: `--ver`/`--version` prints the installed version
@@ -3239,16 +3252,16 @@ remain opaque arguments. O(N) dispatch plus delegated I/O; no migration.
 |`cmd_wtp`|fn|pub|5689-5692|def cmd_wtp(extra)|
 |`cmd_wtd`|fn|pub|5701-5727|def cmd_wtd(extra)|
 |`cmd_ver`|fn|pub|5732-5758|def cmd_ver(extra)|
-|`cmd_chver`|fn|pub|5763-5846|def cmd_chver(extra)|
-|`cmd_major`|fn|pub|5861-5867|def cmd_major(extra)|
-|`cmd_minor`|fn|pub|5882-5888|def cmd_minor(extra)|
-|`cmd_patch`|fn|pub|5903-5909|def cmd_patch(extra)|
-|`cmd_backup`|fn|pub|5917-5927|def cmd_backup(extra)|
-|`cmd_changelog`|fn|pub|5937-5974|def cmd_changelog(extra)|
-|`COMMANDS`|var|pub|5977||
-|`print_command_help`|fn|pub|6066-6073|def print_command_help(name, width=None)|
-|`print_all_help`|fn|pub|6080-6100|def print_all_help()|
-|`main`|fn|pub|6121-6225|def main(argv=None, *, check_updates: bool = True)|
+|`cmd_chver`|fn|pub|5776-5864|def cmd_chver(extra)|
+|`cmd_major`|fn|pub|5879-5885|def cmd_major(extra)|
+|`cmd_minor`|fn|pub|5900-5906|def cmd_minor(extra)|
+|`cmd_patch`|fn|pub|5921-5927|def cmd_patch(extra)|
+|`cmd_backup`|fn|pub|5935-5945|def cmd_backup(extra)|
+|`cmd_changelog`|fn|pub|5955-5992|def cmd_changelog(extra)|
+|`COMMANDS`|var|pub|5995||
+|`print_command_help`|fn|pub|6084-6091|def print_command_help(name, width=None)|
+|`print_all_help`|fn|pub|6098-6118|def print_all_help()|
+|`main`|fn|pub|6139-6243|def main(argv=None, *, check_updates: bool = True)|
 
 
 ---

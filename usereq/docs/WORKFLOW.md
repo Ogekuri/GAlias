@@ -204,7 +204,7 @@
           - `get_git_root(...)`: resolve repository root or the current-directory fallback, exiting with an explicit English error when the current working directory cannot be read [`src/git_alias/core.py`]
           - `_determine_canonical_version(...)`: detect and store the pre-rollback application version [`src/git_alias/core.py`]
           - `_abort_rollback_version_restore(...)`: execute `git revert --abort` and exit non-zero when the version restore fails [`src/git_alias/core.py`]
-          - `cmd_chver(...)`: restore the stored application version across version-managed files before the revert commit [`src/git_alias/core.py`]
+          - `cmd_chver(...)`: restore the stored application version across version-managed files before the revert commit and print the `Updated files:` list of rewritten version-managed files [`src/git_alias/core.py`]
         - `cmd_major(...)`, `cmd_minor(...)`, and `cmd_patch(...)`: parse release operands and route creation or resume publication [`src/git_alias/core.py`]
           - `_parse_release_flags(...)`: validate flags, resolve the `--dev`/`--develop` develop scope, and detect standalone `--resume` with optional develop scope, rejecting the removed `--exec` option through the operand whitelist [`src/git_alias/core.py`]
           - `_run_release_command(...)`: route standalone `--resume` to immutable recovery, otherwise to creation, forwarding the develop scope with unified error exits [`src/git_alias/core.py`]
