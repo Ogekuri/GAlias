@@ -17,13 +17,14 @@ tags: ["requirements", "srs", "galias"]
 ---
 
 # GAlias CLI Requirements
-**Version**: 1.65
+**Version**: 1.67
 **Author**: Francesco Rolando
-**Date**: 2026-11-20
+**Date**: 2026-11-24
 
 ## Revision History
 | Date | Version | Change Summary |
 |------|---------|----------------|
+| 2026-11-24 | 1.67 | Made the rollback pre-flight version check non-fatal: when the version detection does not identify a current version, rollback now prints an explicit English diagnostic and completes the revert commit without the version restore (REQ-170, REQ-343). |
 | 2026-11-20 | 1.66 | Extended conventional commit aliases with parenthesized module specifiers, so `(<module>) <description>` and `(<module>): <description>` construct the canonical `(<module>):` subject (REQ-339), added the `!` breaking-change marker accepted after the module specifier and without a module (REQ-340, REQ-341), and documented all accepted syntaxes in per-command help (REQ-342). |
 | 2026-11-20 | 1.65 | Added the version-update file report: `chver` now prints an `Updated files:` list with one repository-relative line per rewritten version-managed file after the completion line (REQ-337), and the `major`/`minor`/`patch` version-update step and the `rollback` version-restore step print the same list through the shared `chver` flow (REQ-338). |
 | 2026-11-20 | 1.64 | Ordered the `major`, `minor`, and `patch` pre-build validation before any repository mutation: the `pre_release_check` script now runs as the first release-flow operation ahead of the release-prerequisites gate and the version update (REQ-319, REQ-334), the release flow performs no staging, commit, tag, merge, push, or version-file write before every pre-build check passes (REQ-335), and any pre-build-check failure exits non-zero leaving the repository unmodified (REQ-336). |
@@ -187,6 +188,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-340**: MUST conventional commit aliases accept breaking inputs `(<module>)! <description>`, `(<module>)!: <description>`, and `<module>!: <description>`, constructing the canonical subject `<type>(<module>)!: <description>` from each.
 - **REQ-341**: MUST conventional commit aliases accept a leading `!` breaking marker without a module (`! <description>`, `!: <description>`), resolve the module per REQ-116, and emit `!` after the effective scope.
 - **REQ-342**: MUST the per-command help of every conventional alias document the `(<module>)` syntax, the `<module>:` prefix syntax, and the `!` breaking-change marker.
+- **REQ-343**: MUST `rollback` skip the version restore and its version-file staging when the pre-flight version detection fails, leaving version-managed files at the inverse-revert state, and MUST still create the revert commit.
 - **REQ-023**: MUST keep all `core.py` output messages (stdout/stderr, normal/verbose/debug, help/errors) in English.
 - **REQ-025**: MUST require exactly one `major.minor.patch` argument for `chver`, update matching version occurrences from active `ver_rules`, and re-run `ver` to confirm the requested target version.
 - **REQ-026**: MUST the `major`, `minor`, and `patch` commands MUST automate version release by incrementing the corresponding semver index (resetting lower-order indices), MUST share the same support implementation, MUST accept `--include-patch` flag forwarded to `changelog` together with `--force-write`, MUST accept `--dev`/`--develop` per REQ-200, and MUST execute the local `build_script` release step per REQ-166, REQ-167, and REQ-168 between version update and release-version commit, MUST execute the local `pre_release_check` step per REQ-319, REQ-320, and REQ-321 first, and MUST reject the removed `--exec` option per REQ-322; the `patch` command MUST automatically include `--include-patch` in the changelog regeneration step even when the flag is not supplied by the user; the `major` and `minor` commands MUST NOT automatically include `--include-patch`, MUST enforce release prerequisites on configured local branches (`master`, `develop`, `work`), configured remotes (`origin/master`, `origin/develop`), remote update status for `master` and `develop`, current branch equal to `work`, clean working tree, and empty index, MUST print release step logs in the `--- [release:<level>] ... ---` format with one blank line before the first release step, and after `chver` plus staging MUST create the first release commit by amending HEAD when HEAD is an amendable `wip: work in progress.` commit not yet contained in configured `develop` and `master` or by creating a new commit otherwise; before changelog regeneration the flow MUST create a temporary annotated `v<target>` tag on configured local `work`, MUST regenerate changelog, and MUST delete that temporary local tag before any branch integration.
@@ -348,7 +350,7 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-134**: MUST `rollback` accept exactly one `<target>` argument resolvable to a commit hash or tag reachable from `HEAD`; unresolved or unreachable targets MUST fail with explicit English error.
 - **REQ-135**: MUST `rollback` create one non-amend commit restoring branch content to `<target>` by reverting `<target>..HEAD`; commit subject MUST be `revert: Roll back branch to <target> (<resolved_hash>).`; post-commit index and working tree MUST be clean.
 - **REQ-169**: MUST `rollback` execute the canonical version detection check used by `major`, `minor`, and `patch` as pre-flight validation after target validation.
-- **REQ-170**: MUST `rollback` terminate with non-zero exit and explicit English guidance when version rules are missing or the pre-flight version detection fails.
+- **REQ-170**: MUST `rollback` print an explicit English diagnostic naming the version-detection failure and continue without aborting when the pre-flight version detection does not identify a current version.
 - **REQ-171**: MUST `rollback` store the detected current application version when the pre-flight version check succeeds.
 - **REQ-172**: MUST `rollback` restore the stored application version through the `chver` flow after applying inverse revert changes and before the revert commit.
 - **REQ-173**: MUST `rollback` stage restored version files so the revert commit preserves the pre-rollback version.
@@ -539,12 +541,13 @@ The project provides a Python CLI (`galias` / `g`) that executes curated git ali
 - **REQ-322** evidence: `src/git_alias/core.py` `_parse_release_flags` whitelist `{"--include-patch", "--dev", "--develop"}` rejection path with English stderr and `sys.exit(1)`.
 - **REQ-200** evidence: `src/git_alias/core.py` `_parse_release_flags` `--dev`/`--develop` whitelist returning the develop-scope selector and `HELP_TEXTS` option documentation for `major`, `minor`, and `patch`.
 - **REQ-169** evidence: `src/git_alias/core.py` `cmd_rollback` pre-flight `_determine_canonical_version` call executed after target validation.
-- **REQ-170** evidence: `src/git_alias/core.py` `cmd_rollback` non-zero exits for missing `ver_rules` and `VersionDetectionError`.
+- **REQ-170** evidence: `src/git_alias/core.py` `cmd_rollback` catching `VersionDetectionError` after target validation, printing the version-check diagnostic, and continuing without abort.
 - **REQ-171** evidence: `src/git_alias/core.py` `cmd_rollback` `current_version` capture after successful detection.
 - **REQ-172** evidence: `src/git_alias/core.py` `cmd_rollback` `cmd_chver([current_version])` call between `git revert --no-commit` and `_execute_commit`.
 - **REQ-173** evidence: `src/git_alias/core.py` `cmd_rollback` `git add --all` staging step before the revert commit.
 - **REQ-174** evidence: `src/git_alias/core.py` `cmd_rollback` `git revert --abort` failure handler for the version restore step.
 - **REQ-175** evidence: `src/git_alias/core.py` `HELP_TEXTS["rollback"]` and `README.md` rollback command/example entries.
+- **REQ-343** evidence: `src/git_alias/core.py` `cmd_rollback` conditional `cmd_chver` restore and staging executed only when the pre-flight detection stored a version.
 - **REQ-182** evidence: `src/git_alias/core.py` `cmd_dc` arity validation rejecting zero or more than two positional refs.
 - **REQ-183** evidence: `src/git_alias/core.py` `cmd_dc` `git difftool -d <ref_prev> <ref>` operand order.
 - **REQ-184** evidence: `src/git_alias/core.py` `cmd_dc` `<ref>~1` default resolution for omitted `<ref_prev>`.

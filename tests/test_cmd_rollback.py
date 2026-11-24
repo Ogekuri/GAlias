@@ -118,21 +118,32 @@ class CmdRollbackTest(unittest.TestCase):
         self.assertEqual(ctx.exception.code, 1)
         self.assertIn("target matches HEAD", err.getvalue())
 
-    def test_fails_when_version_rules_are_missing(self):
+    def test_continues_without_version_restore_when_rules_are_missing(self):
+        manager = mock.Mock()
         with (
             self._patch_target_pipeline(),
             mock.patch.object(core, "get_version_rules", return_value=[]),
-            mock.patch.object(core, "run_git_cmd", return_value=None) as run_git,
+            mock.patch.object(core, "cmd_chver", new=manager.chver),
+            mock.patch.object(core, "run_git_cmd", new=manager.run_git),
+            mock.patch.object(core, "_execute_commit", new=manager.execute_commit),
         ):
             err = io.StringIO()
             with contextlib.redirect_stderr(err):
-                with self.assertRaises(SystemExit) as ctx:
-                    core.cmd_rollback(["v1.2.3"])
-        self.assertEqual(ctx.exception.code, 1)
-        self.assertIn("no version rules configured", err.getvalue())
-        run_git.assert_not_called()
+                core.cmd_rollback(["v1.2.3"])
+        self.assertIn("Version check failed", err.getvalue())
+        self.assertIn("without version restoration", err.getvalue())
+        expected_calls = [
+            mock.call.run_git(["revert", "--no-commit", f"{RESOLVED_HASH}..HEAD"]),
+            mock.call.execute_commit(
+                f"revert: Roll back branch to v1.2.3 ({RESOLVED_HASH}).",
+                "rollback",
+                allow_amend=False,
+            ),
+        ]
+        self.assertEqual(manager.mock_calls, expected_calls)
 
-    def test_fails_when_version_detection_fails(self):
+    def test_continues_without_version_restore_when_detection_fails(self):
+        manager = mock.Mock()
         with (
             self._patch_target_pipeline(),
             mock.patch.object(core, "get_version_rules", return_value=VERSION_RULES),
@@ -144,15 +155,24 @@ class CmdRollbackTest(unittest.TestCase):
                 "_determine_canonical_version",
                 side_effect=core.VersionDetectionError("no version found"),
             ),
-            mock.patch.object(core, "run_git_cmd", return_value=None) as run_git,
+            mock.patch.object(core, "cmd_chver", new=manager.chver),
+            mock.patch.object(core, "run_git_cmd", new=manager.run_git),
+            mock.patch.object(core, "_execute_commit", new=manager.execute_commit),
         ):
             err = io.StringIO()
             with contextlib.redirect_stderr(err):
-                with self.assertRaises(SystemExit) as ctx:
-                    core.cmd_rollback(["v1.2.3"])
-        self.assertEqual(ctx.exception.code, 1)
-        self.assertIn("version check failed", err.getvalue())
-        run_git.assert_not_called()
+                core.cmd_rollback(["v1.2.3"])
+        self.assertIn("no version found", err.getvalue())
+        self.assertIn("without version restoration", err.getvalue())
+        expected_calls = [
+            mock.call.run_git(["revert", "--no-commit", f"{RESOLVED_HASH}..HEAD"]),
+            mock.call.execute_commit(
+                f"revert: Roll back branch to v1.2.3 ({RESOLVED_HASH}).",
+                "rollback",
+                allow_amend=False,
+            ),
+        ]
+        self.assertEqual(manager.mock_calls, expected_calls)
 
     def test_executes_revert_restores_version_and_creates_non_amend_commit(self):
         manager = mock.Mock()

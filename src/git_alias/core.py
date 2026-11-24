@@ -1148,7 +1148,7 @@ HELP_TEXTS = {
     "docs": "Conventional commit docs(<module>): <description>. Input: '(<module>) <description>', '(<module>)!: <description>', '<module>: <description>', or '<description>' (uses default_commit_module; '!' marks a breaking change).",
     "style": "Conventional commit style(<module>): <description>. Input: '(<module>) <description>', '(<module>)!: <description>', '<module>: <description>', or '<description>' (uses default_commit_module; '!' marks a breaking change).",
     "revert": "Conventional commit revert(<module>): <description>. Input: '(<module>) <description>', '(<module>)!: <description>', '<module>: <description>', or '<description>' (uses default_commit_module; '!' marks a breaking change).",
-    "rollback": "Create rollback commit to a target commit or tag on current branch, preserving the current application version (runs a version pre-check and restores the version via chver before committing). Syntax: git rollback <commit-hash|tag>.",
+    "rollback": "Create rollback commit to a target commit or tag on current branch, preserving the current application version (runs a version pre-check and restores the version via chver before committing; when the version check cannot identify the current version, the rollback completes without version restoration). Syntax: git rollback <commit-hash|tag>.",
     "misc": "Conventional commit misc(<module>): <description>. Input: '(<module>) <description>', '(<module>)!: <description>', '<module>: <description>', or '<description>' (uses default_commit_module; '!' marks a breaking change).",
     "cover": "Conventional commit cover(<module>): <description>. Input: '(<module>) <description>', '(<module>)!: <description>', '<module>: <description>', or '<description>' (uses default_commit_module; '!' marks a breaking change).",
     "me": "Merge with fast-forward only (git merge --ff-only).",
@@ -4192,12 +4192,16 @@ def cmd_revert(extra):
 #          <target>..HEAD`, restores the pre-rollback application version through
 #          the `chver` flow, stages restored files with `git add --all`, and creates
 #          one non-amend conventional `revert` commit preserving the pre-rollback
-#          version. A failed version restore aborts via `git revert --abort`.
+#          version. A failed version restore aborts via `git revert --abort`. A
+#          failed or rule-less version detection is non-fatal (REQ-170): the
+#          diagnostic is printed and the rollback continues without the version
+#          restore, leaving version-managed files at the inverse-revert state
+#          (REQ-343).
 # @param extra `list | None` — requires exactly one rollback target or `--help`.
 # @return Return value emitted by `_execute_commit`.
 # @exception SystemExit Exit code 1 on argument, precondition, resolution, ancestry,
-#             version-check, revert, or version-restore failures.
-# @satisfies REQ-132, REQ-133, REQ-134, REQ-135, REQ-169, REQ-170, REQ-171, REQ-172, REQ-173, REQ-174
+#             revert, or version-restore failures.
+# @satisfies REQ-132, REQ-133, REQ-134, REQ-135, REQ-169, REQ-170, REQ-171, REQ-172, REQ-173, REQ-174, REQ-343
 def cmd_rollback(extra):
     args = _to_args(extra)
     if args == ["--help"]:
@@ -4232,22 +4236,22 @@ def cmd_rollback(extra):
         )
         sys.exit(1)
     rules = get_version_rules()
-    if not rules:
+    current_version = None
+    if rules:
+        try:
+            current_version = _determine_canonical_version(get_git_root(), rules)
+        except VersionDetectionError as exc:
+            current_version = None
+            print(
+                f"Version check failed: {exc}. Rolling back without version restoration.",
+                file=sys.stderr,
+            )
+    else:
         print(
-            "Unable to run git rollback: no version rules configured. "
-            "Cannot preserve the application version.",
+            "Version check failed: no version rules are configured. "
+            "Rolling back without version restoration.",
             file=sys.stderr,
         )
-        sys.exit(1)
-    root = get_git_root()
-    try:
-        current_version = _determine_canonical_version(root, rules)
-    except VersionDetectionError as exc:
-        print(
-            f"Unable to run git rollback: the version check failed. {exc}",
-            file=sys.stderr,
-        )
-        sys.exit(1)
     try:
         run_git_cmd(["revert", "--no-commit", f"{resolved_target}..HEAD"])
     except CommandExecutionError as exc:
@@ -4263,11 +4267,12 @@ def cmd_rollback(extra):
         else:
             print("Unable to run git rollback: revert operation failed.", file=sys.stderr)
         sys.exit(exc.returncode or 1)
-    try:
-        cmd_chver([current_version])
-        run_git_cmd(["add", "--all"])
-    except (SystemExit, RuntimeError) as exc:
-        _abort_rollback_version_restore(exc)
+    if current_version is not None:
+        try:
+            cmd_chver([current_version])
+            run_git_cmd(["add", "--all"])
+        except (SystemExit, RuntimeError) as exc:
+            _abort_rollback_version_restore(exc)
     commit_message = f"revert: Roll back branch to {target} ({resolved_target})."
     result = _execute_commit(commit_message, "rollback", allow_amend=False)
     _ensure_clean_worktree_and_index("rollback")
