@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.52.11](https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.11) - 2026-11-20
+## [0.52.12](https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.12) - 2026-11-24
 ### ⛰️  Features
 - support parenthesized module specifier and breaking marker [useReq] *(conventional)*
   Conventional aliases accept (<module>) <description> and (<module>): <description> inputs, both constructing the canonical (<module>): subject (REQ-339); the ! breaking marker is accepted after the module specifier and without a module (REQ-340, REQ-341); per-command help documents all accepted syntaxes (REQ-342). Unit tests cover every new form (REQ-339..REQ-342).
@@ -49,6 +49,16 @@
   no-residual-Bash-message assertions; update WORKFLOW.md call-trace.
 
 ### 🚜  Changes
+- continue rollback without version restore when detection fails [useReq] *(rollback)*
+  REQ-170: the rollback version pre-flight check is no longer fatal; a
+  failed or rule-less version detection prints an explicit English
+  diagnostic and continues the rollback.
+  REQ-343: the chver restore and version-file staging are skipped when no
+  version is detected, leaving version-managed files at the inverse-revert
+  state while the revert commit is still created.
+  Updated rollback help text and README documentation (REQ-175) and
+  refactored tests/test_cmd_rollback.py to the new contract; full pytest
+  suite passes (521 passed, 1 skipped).
 - run pre-build checks before any repository mutation [useReq] *(release)*
   REQ-319 amended: the configured pre_release_check script now executes
   as the first release-flow operation of major/minor/patch, before the
@@ -1079,7 +1089,7 @@
 - \[0.50.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.50.0
 - \[0.51.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.51.0
 - \[0.52.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.0
-- \[0.52.11\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.11
+- \[0.52.12\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.12
 
 [0.1.0]: https://github.com/Ogekuri/GAlias/releases/tag/v0.1.0
 [0.2.0]: https://github.com/Ogekuri/GAlias/compare/v0.1.0..v0.2.0
@@ -1133,4 +1143,4 @@
 [0.50.0]: https://github.com/Ogekuri/GAlias/compare/v0.49.0..v0.50.0
 [0.51.0]: https://github.com/Ogekuri/GAlias/compare/v0.50.0..v0.51.0
 [0.52.0]: https://github.com/Ogekuri/GAlias/compare/v0.51.0..v0.52.0
-[0.52.11]: https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.11
+[0.52.12]: https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.12
