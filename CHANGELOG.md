@@ -1,6 +1,6 @@
 # Changelog
 
-## [0.52.12](https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.12) - 2026-11-24
+## [0.52.13](https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.13) - 2026-11-27
 ### ⛰️  Features
 - support parenthesized module specifier and breaking marker [useReq] *(conventional)*
   Conventional aliases accept (<module>) <description> and (<module>): <description> inputs, both constructing the canonical (<module>): subject (REQ-339); the ! breaking marker is accepted after the module specifier and without a module (REQ-340, REQ-341); per-command help documents all accepted syntaxes (REQ-342). Unit tests cover every new form (REQ-339..REQ-342).
@@ -24,6 +24,7 @@
   scripts/build.sh --clean now delegates to scripts/clean.sh (REQ-286).; pre-release-check cleanup uses scripts/clean.sh (REQ-226, REQ-288).; Added tests/test_clean_script.py suite; 504 tests pass.; Updated WORKFLOW.md with the PROC:clean-sh unit and its edges.
 
 ### 🐛  Bug Fixes
+- Update .gitignore file.
 - exit with explicit error when the CWD is unreadable [useReq] *(core)*
   get_git_root caught the git rev-parse failure but its Path.cwd() fallback escaped a raw FileNotFoundError traceback from main for every command (dcc, dc, dccc, and all other aliases) whenever the current working directory had been deleted, e.g. a removed worktree. The fallback now prints an explicit English diagnostic and exits with status 1 (DES-002), so all commands share a single safe resolution path. Add reproducer unit tests covering get_git_root and the main(['dcc']) entrypoint, update WORKFLOW.md call-trace nodes and regenerate REFERENCES.md.
 - scope --force rejection to the first CLI token [useReq] *(core)*
@@ -1089,7 +1090,7 @@
 - \[0.50.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.50.0
 - \[0.51.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.51.0
 - \[0.52.0\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.0
-- \[0.52.12\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.12
+- \[0.52.13\]: https://github.com/Ogekuri/GAlias/releases/tag/v0.52.13
 
 [0.1.0]: https://github.com/Ogekuri/GAlias/releases/tag/v0.1.0
 [0.2.0]: https://github.com/Ogekuri/GAlias/compare/v0.1.0..v0.2.0
@@ -1143,4 +1144,4 @@
 [0.50.0]: https://github.com/Ogekuri/GAlias/compare/v0.49.0..v0.50.0
 [0.51.0]: https://github.com/Ogekuri/GAlias/compare/v0.50.0..v0.51.0
 [0.52.0]: https://github.com/Ogekuri/GAlias/compare/v0.51.0..v0.52.0
-[0.52.12]: https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.12
+[0.52.13]: https://github.com/Ogekuri/GAlias/compare/v0.52.0..v0.52.13

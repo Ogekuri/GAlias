@@ -4,7 +4,7 @@
 
 ## @brief Store semantic version string for package metadata.
 # @details Used by CLI usage/version output and by release automation checks.
-__version__ = "0.52.12"
+__version__ = "0.52.13"
 
 from .core import main  # noqa: F401
 
